@@ -819,6 +819,11 @@ describe("computer home storage", () => {
     expect(trapAt).toBeGreaterThan(-1);
     expect(firstChildAt).toBeGreaterThan(-1);
     expect(trapAt).toBeLessThan(firstChildAt);
+    // A stop before Xvfb exists must not try to signal or wait on an empty PID.
+    expect(start).toMatch(/^XVFB_PID=""$/m);
+    expect(start.match(/if \[\[ -n "\$XVFB_PID" \]\]; then/g)?.length ?? 0).toBeGreaterThanOrEqual(
+      2,
+    );
     // Steady state waits on Xvfb instead of polling, so the trap runs immediately.
     expect(start).toMatch(/^wait "\$XVFB_PID"$/m);
   });

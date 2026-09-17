@@ -131,22 +131,26 @@ export function attachMobileTrackpad(
   };
   const onTouchStart = (event) => {
     if (!enabled) return;
-    const touch = event.changedTouches?.[0];
-    if (!touch) return;
-    if (onCanvas(touch.clientX, touch.clientY)) {
-      if (desktopTouchId === null || !stillDown(event, desktopTouchId)) {
-        desktopTouchId = touch.identifier;
-        followDesktopTouch(touch);
+    // A touchstart can carry several new touches; classify each one.
+    let freeArea = false;
+    for (const touch of Array.from(event.changedTouches ?? [])) {
+      if (onCanvas(touch.clientX, touch.clientY)) {
+        if (desktopTouchId === null || !stillDown(event, desktopTouchId)) {
+          desktopTouchId = touch.identifier;
+          followDesktopTouch(touch);
+        }
+        continue;
       }
-      return;
+      freeArea = true;
+      // Extra fingers never take over a live gesture; a touch whose end was lost does not block it.
+      if (touchId !== null && stillDown(event, touchId)) continue;
+      touchId = touch.identifier;
+      lastX = touch.clientX;
+      lastY = touch.clientY;
+      moved = false;
     }
-    consume(event);
-    // Extra fingers never take over a live gesture; a touch whose end was lost does not block it.
-    if (touchId !== null && stillDown(event, touchId)) return;
-    touchId = touch.identifier;
-    lastX = touch.clientX;
-    lastY = touch.clientY;
-    moved = false;
+    // Any free-area touch is consumed so iOS never turns it into compatibility mouse events.
+    if (freeArea) consume(event);
   };
   const onTouchMove = (event) => {
     if (!enabled) return;

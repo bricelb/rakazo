@@ -72,13 +72,12 @@ function trackpadFixture() {
     clientX: number,
     clientY: number,
     others: TouchLike[] = [],
+    batched: TouchLike[] = [],
   ) => {
+    const changed = [{ identifier, clientX, clientY }, ...batched];
     const event: TouchEventLike = {
-      changedTouches: [{ identifier, clientX, clientY }],
-      touches:
-        type === "touchend" || type === "touchcancel"
-          ? others
-          : [{ identifier, clientX, clientY }, ...others],
+      changedTouches: changed,
+      touches: type === "touchend" || type === "touchcancel" ? others : [...changed, ...others],
       defaultPrevented: false,
       preventDefault() {
         this.defaultPrevented = true;
@@ -252,6 +251,28 @@ describe("mobile trackpad touches", () => {
       expect(fixture.mouseEvents.filter((event) => event.type === "mousedown")).toHaveLength(0);
       fixture.touch("touchmove", 1, 70, 250);
       expect(fixture.mouseEvents.at(-1)).toEqual({ type: "mousemove", clientX: 120, clientY: 150 });
+      fixture.detach();
+    } finally {
+      restore();
+    }
+  });
+
+  it("classifies every touch of a batched touchstart", () => {
+    const restore = stubMouseEvent();
+    try {
+      const fixture = trackpadFixture();
+      // One finger lands on the desktop and another in the free area in the same event.
+      const start = fixture.touch(
+        "touchstart",
+        1,
+        40,
+        120,
+        [],
+        [{ identifier: 2, clientX: 100, clientY: 250 }],
+      );
+      expect(start.defaultPrevented).toBe(true);
+      fixture.touch("touchmove", 2, 110, 250, [{ identifier: 1, clientX: 40, clientY: 120 }]);
+      expect(fixture.mouseEvents.at(-1)).toEqual({ type: "mousemove", clientX: 50, clientY: 120 });
       fixture.detach();
     } finally {
       restore();

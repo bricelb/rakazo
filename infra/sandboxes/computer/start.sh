@@ -87,8 +87,18 @@ if [[ ! -f "$NOVNC_ROOT/mobile-keyboard.js" ]]; then
 fi
 websockify --heartbeat=30 --web="$NOVNC_ROOT" --token-plugin=TokenFile --token-source=/tmp/rakazo/view-target-1 0.0.0.0:6080 >/tmp/rakazo/novnc.log 2>&1 &
 
-while kill -0 "$XVFB_PID" 2>/dev/null; do
-  sleep 2
-done
+# This script is PID 1. Without a handler, PID 1 ignores SIGTERM and `docker stop` waits its
+# full grace period before killing the container, so every stop, sleep and computer switch
+# took ten seconds. Forward the signal to the desktop processes and exit promptly instead.
+shutdown() {
+  trap - TERM INT
+  kill -TERM "$XVFB_PID" 2>/dev/null || true
+  kill -TERM -- -1 2>/dev/null || true
+  wait "$XVFB_PID" 2>/dev/null || true
+  exit 0
+}
+trap shutdown TERM INT
+
+wait "$XVFB_PID"
 echo "Xvfb exited" >&2
 exit 1

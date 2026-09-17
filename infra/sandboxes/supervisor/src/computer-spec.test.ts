@@ -812,5 +812,14 @@ describe("computer home storage", () => {
     expect(start).toMatch(/trap shutdown TERM INT/);
     expect(start).toMatch(/kill -TERM "\$XVFB_PID"/);
     expect(start).not.toMatch(/while kill -0 "\$XVFB_PID"/);
+    // The handler must be in place before the first child process starts, so a stop that
+    // arrives during startup is honoured instead of waiting for Docker's grace period.
+    const trapAt = start.indexOf("trap shutdown TERM INT");
+    const firstChildAt = start.search(/^[^#\n]*&\s*$/m);
+    expect(trapAt).toBeGreaterThan(-1);
+    expect(firstChildAt).toBeGreaterThan(-1);
+    expect(trapAt).toBeLessThan(firstChildAt);
+    // Steady state waits on Xvfb instead of polling, so the trap runs immediately.
+    expect(start).toMatch(/^wait "\$XVFB_PID"$/m);
   });
 });

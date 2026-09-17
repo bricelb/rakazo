@@ -283,6 +283,23 @@ describe("screen URL reuse", () => {
     fixture.controller.dispose();
   });
 
+  it("caches a null screen result until the status changes", async () => {
+    vi.useFakeTimers();
+    const fixture = setup();
+    fixture.readStatus.mockResolvedValue(stopped);
+    fixture.readScreen.mockResolvedValue(null);
+    fixture.controller.start();
+    await vi.advanceTimersByTimeAsync(6000);
+    expect(fixture.readScreen).toHaveBeenCalledTimes(1);
+    expect(fixture.onScreen).toHaveBeenCalledExactlyOnceWith(null);
+    fixture.readStatus.mockResolvedValue(running);
+    fixture.readScreen.mockResolvedValue("https://screen.example.test");
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(fixture.readScreen).toHaveBeenCalledTimes(2);
+    expect(fixture.onScreen).toHaveBeenLastCalledWith("https://screen.example.test");
+    fixture.controller.dispose();
+  });
+
   it("re-reads the screen when the status that shapes it changes", async () => {
     vi.useFakeTimers();
     const fixture = setup();

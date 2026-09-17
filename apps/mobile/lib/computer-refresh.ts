@@ -37,14 +37,16 @@ export function createComputerRefresh(options: {
   let activeActions = 0;
   let pendingRevision: number | undefined;
   let timer: ReturnType<typeof setTimeout> | undefined;
-  let screenUrl: string | null = null;
+  // A completed read is cached even when it returned null (no screen for this status), so the
+  // status alone decides when to ask again; the viewer clears the cache when a URL stops working.
+  let screenLoaded = false;
   let screenStatus: string | undefined;
   let screenReadAt = 0;
 
   function screenStale(status: ComputerStatus, force: boolean) {
     return (
       force ||
-      screenUrl === null ||
+      !screenLoaded ||
       screenStatus !== screenKey(status) ||
       Date.now() - screenReadAt >= SCREEN_URL_RENEW_MS
     );
@@ -75,7 +77,7 @@ export function createComputerRefresh(options: {
         try {
           const url = await options.readScreen(screenAttempts);
           if (!current()) return;
-          screenUrl = url;
+          screenLoaded = true;
           screenStatus = screenKey(status);
           screenReadAt = Date.now();
           options.onScreen(url);
@@ -98,7 +100,7 @@ export function createComputerRefresh(options: {
     refresh: (input?: { screenAttempts?: number }) => refresh(input),
     /** The viewer could not use the current URL: read a fresh one on the next poll. */
     invalidateScreen() {
-      screenUrl = null;
+      screenLoaded = false;
     },
     isActive: () => active,
     beginAction() {
@@ -138,7 +140,7 @@ export function createComputerRefresh(options: {
       active = false;
       lifetime += 1;
       activeActions = 0;
-      screenUrl = null;
+      screenLoaded = false;
       screenStatus = undefined;
       invalidate();
     },

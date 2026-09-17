@@ -26,7 +26,16 @@ export function isTouchBrowser(navigatorLike = globalThis.navigator, windowLike 
   return Boolean(navigatorLike?.maxTouchPoints > 0 || "ontouchstart" in windowLike);
 }
 
-/** Add a relative touch trackpad that drives noVNC's mouse canvas. */
+/**
+ * Add a relative touch trackpad that drives noVNC's mouse canvas.
+ *
+ * Touches that begin on the desktop itself stay with noVNC (tap = move the pointer there and
+ * click), which is the only way to reach some spots; the trackpad only keeps its cursor in sync.
+ * Touches that begin in the free area around the desktop are consumed here: dragging moves the
+ * pointer relative to where it is, a tap clicks where the pointer is. They are consumed at the
+ * touch level (not pointer capture) so iOS never turns them into compatibility mouse events
+ * that noVNC would clamp to the nearest desktop edge.
+ */
 export function attachMobileTrackpad(
   rfb,
   { button, surface, documentTarget = globalThis.document, sensitivity = 1.5 },
@@ -34,7 +43,7 @@ export function attachMobileTrackpad(
   if (!button || !surface || !documentTarget || rfb.viewOnly) return () => {};
 
   let enabled = false;
-  let pointerId = null;
+  let touchId = null;
   let lastX = 0;
   let lastY = 0;
   let cursorX = null;
@@ -42,8 +51,29 @@ export function attachMobileTrackpad(
   let moved = false;
 
   const canvas = () => surface.querySelector("canvas");
+  const clampToCanvas = (x, y) => {
+    const bounds = canvas()?.getBoundingClientRect();
+    if (!bounds) return null;
+    return {
+      x: Math.max(bounds.left, Math.min(bounds.right - 1, x)),
+      y: Math.max(bounds.top, Math.min(bounds.bottom - 1, y)),
+    };
+  };
+  const onCanvas = (x, y) => {
+    const bounds = canvas()?.getBoundingClientRect();
+    return Boolean(
+      bounds && x >= bounds.left && x < bounds.right && y >= bounds.top && y < bounds.bottom,
+    );
+  };
+  // While a button is down, noVNC covers the page with a capture overlay and only releases it
+  // when a mouseup reaches that overlay (the canvas handler stops propagation). A synthetic
+  // mouseup must therefore go to the overlay, which forwards it to the canvas and releases.
+  const captureOverlay = () => {
+    const overlay = documentTarget.getElementById?.("noVNC_mouse_capture_elem");
+    return overlay && overlay.style?.display !== "none" ? overlay : null;
+  };
   const mouse = (type, buttonNumber = 0) => {
-    const target = canvas();
+    const target = (type === "mouseup" && captureOverlay()) || canvas();
     if (!target || cursorX == null || cursorY == null) return;
     target.dispatchEvent(
       new MouseEvent(type, {
@@ -62,12 +92,15 @@ export function attachMobileTrackpad(
     const bounds = target.getBoundingClientRect();
     cursorX ??= bounds.left + bounds.width / 2;
     cursorY ??= bounds.top + bounds.height / 2;
-    cursorX = Math.max(bounds.left, Math.min(bounds.right - 1, cursorX + deltaX * sensitivity));
-    cursorY = Math.max(bounds.top, Math.min(bounds.bottom - 1, cursorY + deltaY * sensitivity));
+    const next = clampToCanvas(cursorX + deltaX * sensitivity, cursorY + deltaY * sensitivity);
+    if (!next) return;
+    cursorX = next.x;
+    cursorY = next.y;
     mouse("mousemove");
   };
   const setEnabled = (next) => {
     enabled = next;
+    touchId = null;
     const label = enabled ? "Use direct touch" : "Use trackpad";
     button.setAttribute("aria-pressed", String(enabled));
     button.setAttribute("aria-label", label);
@@ -78,55 +111,73 @@ export function attachMobileTrackpad(
     if (enabled) positionCursor();
   };
   const onButtonClick = () => setEnabled(!enabled);
-  const shouldHandle = (event) => enabled && event.pointerType !== "mouse";
   const consume = (event) => {
     event.preventDefault();
     event.stopPropagation();
   };
-  const onPointerDown = (event) => {
-    if (!shouldHandle(event) || pointerId !== null) return;
+  const trackedTouch = (event) =>
+    Array.from(event.changedTouches ?? []).find((touch) => touch.identifier === touchId);
+  const onTouchStart = (event) => {
+    if (!enabled) return;
+    const touch = event.changedTouches?.[0];
+    if (!touch) return;
+    if (onCanvas(touch.clientX, touch.clientY)) {
+      // Direct touch on the desktop: noVNC moves the pointer there; follow it.
+      const next = clampToCanvas(touch.clientX, touch.clientY);
+      if (next) {
+        cursorX = next.x;
+        cursorY = next.y;
+      }
+      touchId = null;
+      return;
+    }
+    // A new touch always starts a new gesture, even if the previous one never reported its end.
     consume(event);
-    pointerId = event.pointerId;
-    lastX = event.clientX;
-    lastY = event.clientY;
+    touchId = touch.identifier;
+    lastX = touch.clientX;
+    lastY = touch.clientY;
     moved = false;
-    event.target.setPointerCapture?.(event.pointerId);
   };
-  const onPointerMove = (event) => {
-    if (!shouldHandle(event) || event.pointerId !== pointerId) return;
+  const onTouchMove = (event) => {
+    if (!enabled || touchId === null) return;
+    const touch = trackedTouch(event);
+    if (!touch) return;
     consume(event);
-    const deltaX = event.clientX - lastX;
-    const deltaY = event.clientY - lastY;
+    const deltaX = touch.clientX - lastX;
+    const deltaY = touch.clientY - lastY;
     if (Math.abs(deltaX) + Math.abs(deltaY) > 1) moved = true;
     positionCursor(deltaX, deltaY);
-    lastX = event.clientX;
-    lastY = event.clientY;
+    lastX = touch.clientX;
+    lastY = touch.clientY;
   };
-  const finishPointer = (event, click) => {
-    if (!shouldHandle(event) || event.pointerId !== pointerId) return;
+  const finishTouch = (event, click) => {
+    if (!enabled || touchId === null) return;
+    const touch = trackedTouch(event);
+    if (!touch) return;
     consume(event);
+    touchId = null;
     if (click && !moved) {
       mouse("mousedown");
       mouse("mouseup");
     }
-    pointerId = null;
   };
-  const onPointerUp = (event) => finishPointer(event, true);
-  const onPointerCancel = (event) => finishPointer(event, false);
+  const onTouchEnd = (event) => finishTouch(event, true);
+  const onTouchCancel = (event) => finishTouch(event, false);
+  const listen = { capture: true, passive: false };
 
   button.hidden = false;
   button.addEventListener("click", onButtonClick);
-  surface.addEventListener("pointerdown", onPointerDown, true);
-  surface.addEventListener("pointermove", onPointerMove, true);
-  surface.addEventListener("pointerup", onPointerUp, true);
-  surface.addEventListener("pointercancel", onPointerCancel, true);
+  surface.addEventListener("touchstart", onTouchStart, listen);
+  surface.addEventListener("touchmove", onTouchMove, listen);
+  surface.addEventListener("touchend", onTouchEnd, listen);
+  surface.addEventListener("touchcancel", onTouchCancel, listen);
 
   return () => {
     button.removeEventListener("click", onButtonClick);
-    surface.removeEventListener("pointerdown", onPointerDown, true);
-    surface.removeEventListener("pointermove", onPointerMove, true);
-    surface.removeEventListener("pointerup", onPointerUp, true);
-    surface.removeEventListener("pointercancel", onPointerCancel, true);
+    surface.removeEventListener("touchstart", onTouchStart, listen);
+    surface.removeEventListener("touchmove", onTouchMove, listen);
+    surface.removeEventListener("touchend", onTouchEnd, listen);
+    surface.removeEventListener("touchcancel", onTouchCancel, listen);
     surface.classList.remove("trackpad-active");
     rfb.showDotCursor = false;
   };

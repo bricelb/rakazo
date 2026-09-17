@@ -13,8 +13,8 @@ import { ComputerModePicker } from "../components/computer-mode-picker";
 import { NativeSymbol } from "../components/native-symbol";
 import { currentApiBase, rpc } from "../lib/api";
 import {
-  COMPUTER_LIFECYCLE_TIMEOUT_MS,
   COMPUTER_HEARTBEAT_MS,
+  COMPUTER_LIFECYCLE_TIMEOUT_MS,
   type ComputerStatus,
   computerLabel,
   controlLabel,

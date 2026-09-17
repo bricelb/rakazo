@@ -577,12 +577,21 @@ export async function rpc<T>(
     prompt: promptAiConsent,
     allow: (input) => rpc("aiConsent/allow", input, { requestContext: consentContext }),
   });
+  // Abort with an explicit reason so every consumer of the signal (the fetch, the bounded body
+  // read, and nested recovery calls that share this signal) reports the same cause.
   const controller = new AbortController();
-  const abort = () => controller.abort();
-  if (options.signal?.aborted) abort();
-  else options.signal?.addEventListener("abort", abort, { once: true });
+  const cancel = () => controller.abort(options.signal?.reason ?? new Error("Request canceled"));
+  if (options.signal?.aborted) cancel();
+  else options.signal?.addEventListener("abort", cancel, { once: true });
   const timer =
-    options.timeoutMs === null ? undefined : setTimeout(abort, options.timeoutMs ?? RPC_TIMEOUT_MS);
+    options.timeoutMs === null
+      ? undefined
+      : setTimeout(
+          () => controller.abort(new Error("Request timed out")),
+          options.timeoutMs ?? RPC_TIMEOUT_MS,
+        );
+  const abortReason = (error: unknown) =>
+    controller.signal.aborted ? (controller.signal.reason ?? error) : error;
   // Bind recovery to the Space + selection epoch this request was sent with:
   // a 401 arriving after the user switched Spaces — including A → B → A —
   // belongs to a stale request and must not touch the current selection.
@@ -604,12 +613,7 @@ export async function rpc<T>(
     } catch (error) {
       // The native fetch reports an aborted request with an implementation detail
       // ("FetchRequestCanceledException"); say what happened instead.
-      if (controller.signal.aborted) {
-        throw options.signal?.aborted
-          ? (options.signal.reason ?? new Error("Request canceled"))
-          : new Error("Request timed out");
-      }
-      throw error;
+      throw abortReason(error);
     }
     if (proc === "aiConsent/status" && res.status === 404) {
       cancelResponseBody(res);
@@ -619,7 +623,9 @@ export async function rpc<T>(
       res,
       MAX_MOBILE_RPC_RESPONSE_BYTES,
       controller.signal,
-    );
+    ).catch((error: unknown) => {
+      throw abortReason(error);
+    });
     if (!res.ok || parsed.error) {
       const message = parsed.error?.message ?? `rpc ${proc} failed`;
       const unauthorized = res.status === 401 || /unauthorized/i.test(message);
@@ -698,7 +704,7 @@ export async function rpc<T>(
     return parsed.json as T;
   } finally {
     if (timer) clearTimeout(timer);
-    options.signal?.removeEventListener("abort", abort);
+    options.signal?.removeEventListener("abort", cancel);
   }
 }
 

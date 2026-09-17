@@ -2,6 +2,8 @@ import type { ComputerMode, ComputerStatus as ContractComputerStatus } from "@ra
 import { t } from "./i18n";
 
 export const COMPUTER_HEARTBEAT_MS = 60_000;
+/** Provisioning a computer creates and starts a container; give it far more than an ordinary RPC. */
+export const COMPUTER_BOOT_TIMEOUT_MS = 120_000;
 export const SCREEN_URL_OPEN_ATTEMPTS = 5;
 export const SCREEN_URL_RETRY_DELAY_MS = 400;
 

@@ -589,16 +589,28 @@ export async function rpc<T>(
   const requestHeaders = consentContext?.headers ?? (await authHeaders());
   const requestSpaceId = requestHeaders["x-rakazo-space-id"];
   try {
-    const res = await fetch(`${consentContext?.apiBase ?? currentApiBase()}/rpc/${proc}`, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        origin: "rakazo://",
-        ...requestHeaders,
-      },
-      body: JSON.stringify({ json: body }),
-      signal: controller.signal,
-    });
+    let res: Response;
+    try {
+      res = await fetch(`${consentContext?.apiBase ?? currentApiBase()}/rpc/${proc}`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          origin: "rakazo://",
+          ...requestHeaders,
+        },
+        body: JSON.stringify({ json: body }),
+        signal: controller.signal,
+      });
+    } catch (error) {
+      // The native fetch reports an aborted request with an implementation detail
+      // ("FetchRequestCanceledException"); say what happened instead.
+      if (controller.signal.aborted) {
+        throw options.signal?.aborted
+          ? (options.signal.reason ?? new Error("Request canceled"))
+          : new Error("Request timed out");
+      }
+      throw error;
+    }
     if (proc === "aiConsent/status" && res.status === 404) {
       cancelResponseBody(res);
       throw new Error(t("Update your server to use AI data sharing in this mobile version."));

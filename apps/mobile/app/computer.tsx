@@ -13,6 +13,7 @@ import { ComputerModePicker } from "../components/computer-mode-picker";
 import { NativeSymbol } from "../components/native-symbol";
 import { currentApiBase, rpc } from "../lib/api";
 import {
+  COMPUTER_BOOT_TIMEOUT_MS,
   COMPUTER_HEARTBEAT_MS,
   type ComputerStatus,
   computerLabel,
@@ -100,7 +101,7 @@ export default function Computer() {
     const showBooting = overlay && needsBoot;
     if (showBooting) setBootingCount((count) => count + 1);
     try {
-      if (needsBoot) await rpc("computer/boot", { botId });
+      if (needsBoot) await rpc("computer/boot", { botId }, { timeoutMs: COMPUTER_BOOT_TIMEOUT_MS });
       if (!action.isActive()) return false;
       if (takeControl) await rpc("computer/takeover", { botId });
       if (!action.isActive()) return false;

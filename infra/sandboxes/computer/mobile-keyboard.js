@@ -44,6 +44,7 @@ export function attachMobileTrackpad(
 
   let enabled = false;
   let touchId = null;
+  let desktopTouchId = null;
   let lastX = 0;
   let lastY = 0;
   let cursorX = null;
@@ -101,6 +102,7 @@ export function attachMobileTrackpad(
   const setEnabled = (next) => {
     enabled = next;
     touchId = null;
+    desktopTouchId = null;
     const label = enabled ? "Use direct touch" : "Use trackpad";
     button.setAttribute("aria-pressed", String(enabled));
     button.setAttribute("aria-label", label);
@@ -115,32 +117,43 @@ export function attachMobileTrackpad(
     event.preventDefault();
     event.stopPropagation();
   };
-  const trackedTouch = (event) =>
-    Array.from(event.changedTouches ?? []).find((touch) => touch.identifier === touchId);
+  const changedTouch = (event, identifier) =>
+    Array.from(event.changedTouches ?? []).find((touch) => touch.identifier === identifier);
+  const stillDown = (event, identifier) =>
+    Array.from(event.touches ?? []).some((touch) => touch.identifier === identifier);
+  const followDesktopTouch = (touch) => {
+    // Direct touch on the desktop: noVNC moves the pointer there; keep the trackpad in step.
+    const next = clampToCanvas(touch.clientX, touch.clientY);
+    if (next) {
+      cursorX = next.x;
+      cursorY = next.y;
+    }
+  };
   const onTouchStart = (event) => {
     if (!enabled) return;
     const touch = event.changedTouches?.[0];
     if (!touch) return;
     if (onCanvas(touch.clientX, touch.clientY)) {
-      // Direct touch on the desktop: noVNC moves the pointer there; follow it.
-      const next = clampToCanvas(touch.clientX, touch.clientY);
-      if (next) {
-        cursorX = next.x;
-        cursorY = next.y;
+      if (desktopTouchId === null || !stillDown(event, desktopTouchId)) {
+        desktopTouchId = touch.identifier;
+        followDesktopTouch(touch);
       }
-      touchId = null;
       return;
     }
-    // A new touch always starts a new gesture, even if the previous one never reported its end.
     consume(event);
+    // Extra fingers never take over a live gesture; a touch whose end was lost does not block it.
+    if (touchId !== null && stillDown(event, touchId)) return;
     touchId = touch.identifier;
     lastX = touch.clientX;
     lastY = touch.clientY;
     moved = false;
   };
   const onTouchMove = (event) => {
-    if (!enabled || touchId === null) return;
-    const touch = trackedTouch(event);
+    if (!enabled) return;
+    const desktopTouch = desktopTouchId === null ? null : changedTouch(event, desktopTouchId);
+    if (desktopTouch) followDesktopTouch(desktopTouch);
+    if (touchId === null) return;
+    const touch = changedTouch(event, touchId);
     if (!touch) return;
     consume(event);
     const deltaX = touch.clientX - lastX;
@@ -151,9 +164,17 @@ export function attachMobileTrackpad(
     lastY = touch.clientY;
   };
   const finishTouch = (event, click) => {
-    if (!enabled || touchId === null) return;
-    const touch = trackedTouch(event);
-    if (!touch) return;
+    if (!enabled) return;
+    if (desktopTouchId !== null && changedTouch(event, desktopTouchId)) desktopTouchId = null;
+    if (touchId === null) return;
+    const touch = changedTouch(event, touchId);
+    if (!touch) {
+      // Another finger lifted: swallow it so it cannot become a compatibility click.
+      if (!onCanvas(event.changedTouches?.[0]?.clientX, event.changedTouches?.[0]?.clientY)) {
+        consume(event);
+      }
+      return;
+    }
     consume(event);
     touchId = null;
     if (click && !moved) {

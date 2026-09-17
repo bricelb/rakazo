@@ -10,6 +10,7 @@ import {
 type TouchLike = { identifier: number; clientX: number; clientY: number };
 type TouchEventLike = {
   changedTouches: TouchLike[];
+  touches: TouchLike[];
   preventDefault: () => void;
   stopPropagation: () => void;
   defaultPrevented: boolean;
@@ -65,9 +66,19 @@ function trackpadFixture() {
   };
   const detach = attachMobileTrackpad(rfb, { button, surface, documentTarget, sensitivity: 1 });
   buttonListeners.get("click")?.();
-  const touch = (type: string, identifier: number, clientX: number, clientY: number) => {
+  const touch = (
+    type: string,
+    identifier: number,
+    clientX: number,
+    clientY: number,
+    others: TouchLike[] = [],
+  ) => {
     const event: TouchEventLike = {
       changedTouches: [{ identifier, clientX, clientY }],
+      touches:
+        type === "touchend" || type === "touchcancel"
+          ? others
+          : [{ identifier, clientX, clientY }, ...others],
       defaultPrevented: false,
       preventDefault() {
         this.defaultPrevented = true;
@@ -203,6 +214,44 @@ describe("mobile trackpad touches", () => {
       fixture.touch("touchstart", 2, 100, 250);
       fixture.touch("touchmove", 2, 110, 250);
       expect(fixture.mouseEvents.at(-1)).toEqual({ type: "mousemove", clientX: 50, clientY: 120 });
+      fixture.detach();
+    } finally {
+      restore();
+    }
+  });
+
+  it("follows a drag on the desktop so the next free-area move continues from there", () => {
+    const restore = stubMouseEvent();
+    try {
+      const fixture = trackpadFixture();
+      fixture.touch("touchstart", 1, 40, 120);
+      fixture.touch("touchmove", 1, 90, 170);
+      fixture.touch("touchend", 1, 90, 170);
+      fixture.touch("touchstart", 2, 100, 250);
+      fixture.touch("touchmove", 2, 110, 250);
+      expect(fixture.mouseEvents.at(-1)).toEqual({ type: "mousemove", clientX: 100, clientY: 170 });
+      fixture.detach();
+    } finally {
+      restore();
+    }
+  });
+
+  it("ignores extra fingers during a free-area gesture and never clicks for them", () => {
+    const restore = stubMouseEvent();
+    try {
+      const fixture = trackpadFixture();
+      fixture.touch("touchstart", 1, 50, 250);
+      fixture.touch("touchmove", 1, 60, 250);
+      const second = fixture.touch("touchstart", 2, 150, 280, [
+        { identifier: 1, clientX: 60, clientY: 250 },
+      ]);
+      expect(second.defaultPrevented).toBe(true);
+      fixture.touch("touchmove", 2, 120, 280, [{ identifier: 1, clientX: 60, clientY: 250 }]);
+      expect(fixture.mouseEvents.at(-1)).toEqual({ type: "mousemove", clientX: 110, clientY: 150 });
+      fixture.touch("touchend", 2, 120, 280, [{ identifier: 1, clientX: 60, clientY: 250 }]);
+      expect(fixture.mouseEvents.filter((event) => event.type === "mousedown")).toHaveLength(0);
+      fixture.touch("touchmove", 1, 70, 250);
+      expect(fixture.mouseEvents.at(-1)).toEqual({ type: "mousemove", clientX: 120, clientY: 150 });
       fixture.detach();
     } finally {
       restore();

@@ -422,13 +422,31 @@ describe("Docker sandbox stopped containers", () => {
     expect(isSandboxGoneError(error)).toBe(true);
   });
 
-  it("treats a container the supervisor no longer manages as gone", async () => {
+  it("does not treat a supervisor lookup failure as a stopped container", async () => {
+    // The supervisor answers 404 for any inspection error, not only a missing container.
     supervisorWith(() => Response.json({ error: "computer not found" }, { status: 404 }));
     const provider = new DockerSandboxProvider("http://supervisor.test", "test-token");
 
-    await expect(provider.setScreenControl(computer, false, context, "lease-1")).resolves.toBe(
-      undefined,
+    await expect(provider.setScreenControl(computer, false, context, "lease-1")).rejects.toThrow(
+      /sandbox screen mode failed: 400/,
     );
+    await expect(
+      provider.connectScreen(computer, { view: "stream", interactive: false }, context),
+    ).resolves.toMatchObject({ url: null });
+  });
+
+  it("propagates cancellation raised while checking the container", async () => {
+    const controller = new AbortController();
+    supervisorWith(() => {
+      controller.abort();
+      throw controller.signal.reason;
+    });
+    const provider = new DockerSandboxProvider("http://supervisor.test", "test-token");
+    const cancelable = { ...context, signal: controller.signal };
+
+    await expect(
+      provider.setScreenControl(computer, false, cancelable, "lease-1"),
+    ).rejects.toMatchObject({ name: "AbortError" });
   });
 
   it("keeps a screen-mode failure on a live container an error", async () => {

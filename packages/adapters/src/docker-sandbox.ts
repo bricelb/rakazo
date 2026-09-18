@@ -279,7 +279,11 @@ export class DockerSandboxProvider implements SandboxProvider {
     }
   }
 
-  /** The supervisor's view of the container, or null when it cannot say (transport failure). */
+  /**
+   * The supervisor's view of the container, or null when it cannot say. Only a successful
+   * inspection counts: the supervisor answers 404 for any lookup failure, so that and transport
+   * errors leave the caller on its previous behaviour rather than starting a recovery.
+   */
   private async containerRunning(
     computer: ComputerRef,
     context: AdapterContext,
@@ -290,18 +294,14 @@ export class DockerSandboxProvider implements SandboxProvider {
         headers: this.headers(context, computer.botId),
         signal: context.signal,
       });
-      // 404 means the supervisor no longer manages the container.
-      if (res.status === 404) {
-        cancelResponseBody(res);
-        return false;
-      }
       if (!res.ok) {
         cancelResponseBody(res);
         return null;
       }
       const body = await readSandboxJson<{ running?: boolean }>(res, context.signal);
       return body.running === true;
-    } catch {
+    } catch (error) {
+      if (context.signal.aborted) throw error;
       return null;
     }
   }

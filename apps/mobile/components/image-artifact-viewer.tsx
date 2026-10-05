@@ -1,14 +1,6 @@
 import { useEffect, useState } from "react";
-import {
-  Alert,
-  Modal,
-  Pressable,
-  SafeAreaView,
-  Text,
-  useWindowDimensions,
-  View,
-} from "react-native";
-import { Gesture, GestureDetector, GestureHandlerRootView } from "react-native-gesture-handler";
+import { Alert, Pressable, SafeAreaView, Text, useWindowDimensions, View } from "react-native";
+import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import Animated, { useAnimatedStyle, useSharedValue, withTiming } from "react-native-reanimated";
 import { mobileTokens } from "../lib/appearance";
 import type { MobileArtifactTarget } from "../lib/artifact-open";
@@ -97,7 +89,11 @@ function ZoomableImage({ uri, width, height }: { uri: string; width: number; hei
   );
 }
 
-/** Full-screen image viewer: zoom, share or export through the system sheet, close. */
+/**
+ * Full-screen image viewer: zoom, share or export through the system sheet, close. Rendered as
+ * its own stack screen (see app/image.tsx) rather than a React Native Modal: presenting the share
+ * sheet over a full-screen Modal and cancelling it leaves that Modal black on iOS.
+ */
 export function ImageArtifactViewer({
   threadTarget,
   target,
@@ -150,67 +146,63 @@ export function ImageArtifactViewer({
     );
 
   return (
-    <Modal animationType="fade" presentationStyle="fullScreen" onRequestClose={onClose}>
-      <GestureHandlerRootView style={{ flex: 1 }}>
-        <SafeAreaView style={{ flex: 1, backgroundColor: tokens.background }}>
-          <View
-            style={{
-              height: HEADER_HEIGHT,
-              flexDirection: "row",
-              alignItems: "center",
-              borderBottomWidth: 1,
-              borderBottomColor: tokens.border,
-              paddingHorizontal: 12,
-            }}
-          >
-            <Text
-              numberOfLines={1}
-              style={{ flex: 1, color: tokens.foreground, fontSize: 15, fontWeight: "500" }}
-            >
-              {target.name}
-            </Text>
-            <Pressable
-              accessibilityLabel={t("Share {name}", { name: target.name })}
-              hitSlop={8}
-              onPress={share}
-              style={{ padding: 10 }}
-            >
-              <NativeSymbol
-                ios="square.and.arrow.up"
-                android="share-social-outline"
-                size={20}
-                color={tokens.mutedForeground}
-              />
-            </Pressable>
-            <Pressable
-              accessibilityLabel={t("Close image")}
-              hitSlop={8}
-              onPress={onClose}
-              style={{ padding: 10 }}
-            >
-              <NativeSymbol ios="xmark" android="close" size={20} color={tokens.mutedForeground} />
-            </Pressable>
-          </View>
-          {state.status === "ready" ? (
-            <View
-              style={{
-                flex: 1,
-                alignItems: "center",
-                justifyContent: "center",
-                overflow: "hidden",
-              }}
-            >
-              <ZoomableImage uri={state.uri} width={width} height={height - HEADER_HEIGHT} />
-            </View>
-          ) : (
-            <View style={{ flex: 1, alignItems: "center", justifyContent: "center", padding: 24 }}>
-              <Text style={{ color: tokens.mutedForeground, fontSize: 15, textAlign: "center" }}>
-                {state.status === "loading" ? t("Loading image…") : state.message}
-              </Text>
-            </View>
-          )}
-        </SafeAreaView>
-      </GestureHandlerRootView>
-    </Modal>
+    <SafeAreaView style={{ flex: 1, backgroundColor: tokens.background }}>
+      <View
+        style={{
+          height: HEADER_HEIGHT,
+          flexDirection: "row",
+          alignItems: "center",
+          borderBottomWidth: 1,
+          borderBottomColor: tokens.border,
+          paddingHorizontal: 12,
+        }}
+      >
+        <Text
+          numberOfLines={1}
+          style={{ flex: 1, color: tokens.foreground, fontSize: 15, fontWeight: "500" }}
+        >
+          {target.name}
+        </Text>
+        <Pressable
+          accessibilityLabel={t("Share {name}", { name: target.name })}
+          hitSlop={8}
+          onPress={share}
+          style={{ padding: 10 }}
+        >
+          <NativeSymbol
+            ios="square.and.arrow.up"
+            android="share-social-outline"
+            size={20}
+            color={tokens.mutedForeground}
+          />
+        </Pressable>
+        <Pressable
+          accessibilityLabel={t("Close image")}
+          hitSlop={8}
+          onPress={onClose}
+          style={{ padding: 10 }}
+        >
+          <NativeSymbol ios="xmark" android="close" size={20} color={tokens.mutedForeground} />
+        </Pressable>
+      </View>
+      {state.status === "ready" ? (
+        <View
+          style={{
+            flex: 1,
+            alignItems: "center",
+            justifyContent: "center",
+            overflow: "hidden",
+          }}
+        >
+          <ZoomableImage uri={state.uri} width={width} height={height - HEADER_HEIGHT} />
+        </View>
+      ) : (
+        <View style={{ flex: 1, alignItems: "center", justifyContent: "center", padding: 24 }}>
+          <Text style={{ color: tokens.mutedForeground, fontSize: 15, textAlign: "center" }}>
+            {state.status === "loading" ? t("Loading image…") : state.message}
+          </Text>
+        </View>
+      )}
+    </SafeAreaView>
   );
 }

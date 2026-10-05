@@ -81,7 +81,6 @@ import { AppConnectCard } from "../components/AppConnectCard";
 import { AskActions } from "../components/AskActions";
 import { BotAvatar } from "../components/bot-avatar";
 import type { ImageArtifactPreviewTarget } from "../components/image-artifact-viewer";
-import { ImageArtifactViewer } from "../components/image-artifact-viewer";
 import { InlineImageAttachment } from "../components/inline-image-attachment";
 import { McpApprovalCard } from "../components/McpApprovalCard";
 import {
@@ -404,7 +403,6 @@ function Thread() {
   const [markdownPreview, setMarkdownPreview] = useState<MarkdownArtifactPreviewTarget | null>(
     null,
   );
-  const [imagePreview, setImagePreview] = useState<ImageArtifactPreviewTarget | null>(null);
   const reactionView = useMemo(
     () =>
       projectMessageReactions(
@@ -1654,7 +1652,12 @@ function Thread() {
               onAnswer={answerMessage}
               onOpenBot={openBot}
               onPreviewMarkdown={setMarkdownPreview}
-              onPreviewImage={setImagePreview}
+              onPreviewImage={(target) =>
+                router.push({
+                  pathname: "/image",
+                  params: { ...target, ...(groupId ? { groupId } : { botId }) },
+                })
+              }
               actionProps={actionProps}
             />
           </Pressable>
@@ -2361,13 +2364,6 @@ function Thread() {
           threadTarget={artifactTarget}
           target={markdownPreview}
           onClose={() => setMarkdownPreview(null)}
-        />
-      ) : null}
-      {imagePreview && artifactTarget ? (
-        <ImageArtifactViewer
-          threadTarget={artifactTarget}
-          target={imagePreview}
-          onClose={() => setImagePreview(null)}
         />
       ) : null}
       {quoteTarget ? (

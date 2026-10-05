@@ -9,6 +9,9 @@ function first(value: string | string[] | undefined): string {
   return (Array.isArray(value) ? value[0] : value) ?? "";
 }
 
+/** Bumped by every viewer mount so a closed viewer's delayed relock yields to a newer one. */
+let viewerGeneration = 0;
+
 /** Full-screen image viewer opened from a thread; a stack screen so the share sheet can sit on top of it. */
 export default function ImageScreen() {
   const router = useRouter();
@@ -26,15 +29,19 @@ export default function ImageScreen() {
     // full-screen computer view; the rest of the app stays portrait. The portrait lock on
     // dismissal waits for the unlock to settle, so a quick close cannot leave the thread
     // rotating because the two asynchronous calls landed out of order.
+    // If another viewer has opened in the meantime, it owns the orientation: skip the relock.
+    viewerGeneration += 1;
+    const generation = viewerGeneration;
     const unlocked = ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.DEFAULT).catch(
       () => undefined,
     );
     return () => {
-      void unlocked.then(() =>
-        ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP).catch(
+      void unlocked.then(() => {
+        if (generation !== viewerGeneration) return;
+        return ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP).catch(
           () => undefined,
-        ),
-      );
+        );
+      });
     };
   }, []);
   const threadTarget: MobileArtifactTarget = groupId ? { groupId } : { botId: first(params.botId) };

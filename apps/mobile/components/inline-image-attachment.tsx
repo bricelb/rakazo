@@ -1,16 +1,12 @@
 import { useEffect, useState } from "react";
-import {
-  Image,
-  Pressable,
-  type PressableProps,
-  Text,
-  useWindowDimensions,
-  View,
-} from "react-native";
+import type { PressableProps } from "react-native";
+import { Image, Pressable, Text, useWindowDimensions, View } from "react-native";
 import { mobileTokens } from "../lib/appearance";
-import { imageArtifactUri, type MobileArtifactTarget } from "../lib/artifact-open";
+import type { MobileArtifactTarget } from "../lib/artifact-open";
+import { imageArtifactUri } from "../lib/artifact-open";
 import { useI18n } from "../lib/i18n";
-import { fitImageSize, type ImageSize } from "../lib/inline-image";
+import type { ImageSize } from "../lib/inline-image";
+import { fitImageSize } from "../lib/inline-image";
 
 const MAX_INLINE_HEIGHT = 360;
 

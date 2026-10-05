@@ -60,7 +60,7 @@ const imageArtifactRequests = new Map<
  * Local file URI of an image artifact, downloaded through the authenticated RPC and cached on
  * disk. Concurrent callers (every bubble showing the same image) share one download.
  */
-export function imageArtifactUri(
+export async function imageArtifactUri(
   target: MobileArtifactTarget,
   artifactId: string,
   mimeType: string,
@@ -68,5 +68,19 @@ export function imageArtifactUri(
   const scope = "botId" in target ? `bot:${target.botId}` : `group:${target.groupId}`;
   const key = `${scope}:${artifactId}`;
   imageArtifactRequests.set(key, { target, artifactId, mimeType });
+  const uri = await imageArtifactUris.get(key);
+  // The OS may purge the cache directory between visits; a remembered URI is only as good
+  // as the file behind it, so download again when it is gone.
+  if (new File(uri).exists) return uri;
+  imageArtifactUris.forget(key);
   return imageArtifactUris.get(key);
+}
+
+/** Share a file already on disk (for example an image the viewer is showing) without downloading it again. */
+export async function shareLocalFile(uri: string, mimeType: string, name: string): Promise<void> {
+  if (await Sharing.isAvailableAsync()) {
+    await Sharing.shareAsync(uri, { mimeType });
+    return;
+  }
+  throw new Error(t("Saved {name} locally", { name }));
 }

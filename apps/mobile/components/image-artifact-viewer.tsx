@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Alert, Image, Pressable, Text, View } from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import Animated, { useAnimatedStyle, useSharedValue, withTiming } from "react-native-reanimated";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { mobileTokens } from "../lib/appearance";
 import type { MobileArtifactTarget } from "../lib/artifact-open";
 import { imageArtifactUri, shareLocalFile } from "../lib/artifact-open";
@@ -142,7 +142,6 @@ export function ImageArtifactViewer({
 }) {
   const { t } = useI18n();
   const tokens = mobileTokens();
-  const insets = useSafeAreaInsets();
   const [box, setBox] = useState<ImageSize | null>(null);
   const [state, setState] = useState<
     | { status: "loading" }
@@ -196,7 +195,9 @@ export function ImageArtifactViewer({
       );
 
   return (
-    <View style={{ flex: 1, backgroundColor: tokens.background, paddingTop: insets.top }}>
+    // The app root does not mount SafeAreaProvider, so useSafeAreaInsets() throws.
+    // This view reads the insets itself, including Android edge-to-edge.
+    <SafeAreaView style={{ flex: 1, backgroundColor: tokens.background }}>
       <View
         style={{
           height: HEADER_HEIGHT,
@@ -241,11 +242,13 @@ export function ImageArtifactViewer({
           alignItems: "center",
           justifyContent: "center",
           overflow: "hidden",
-          paddingBottom: insets.bottom,
         }}
         onLayout={(event) => {
           const { width, height } = event.nativeEvent.layout;
-          setBox({ width, height: Math.max(1, height - insets.bottom) });
+          if (width <= 0 || height <= 0) return;
+          setBox((current) =>
+            current?.width === width && current?.height === height ? current : { width, height },
+          );
         }}
       >
         {state.status === "ready" && box ? (
@@ -280,6 +283,6 @@ export function ImageArtifactViewer({
           </Text>
         )}
       </View>
-    </View>
+    </SafeAreaView>
   );
 }

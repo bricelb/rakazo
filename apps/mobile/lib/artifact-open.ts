@@ -3,6 +3,7 @@ import * as Sharing from "expo-sharing";
 import { rpc } from "./api";
 import { artifactCacheFileName } from "./artifact-file";
 import { t } from "./i18n";
+import { createKeyedPromiseCache } from "./inline-image";
 
 export type MobileArtifactTarget = { botId: string } | { groupId: string };
 
@@ -42,4 +43,30 @@ export async function openMobileArtifact(
     return;
   }
   throw new Error(t("Saved {name} locally", { name }));
+}
+
+const imageArtifactUris = createKeyedPromiseCache<string>(async (key) => {
+  const request = imageArtifactRequests.get(key);
+  if (!request) throw new Error("unknown image artifact");
+  const file = await cacheMobileArtifact(request.target, request.artifactId, request.mimeType);
+  return file.uri;
+});
+const imageArtifactRequests = new Map<
+  string,
+  { target: MobileArtifactTarget; artifactId: string; mimeType: string }
+>();
+
+/**
+ * Local file URI of an image artifact, downloaded through the authenticated RPC and cached on
+ * disk. Concurrent callers (every bubble showing the same image) share one download.
+ */
+export function imageArtifactUri(
+  target: MobileArtifactTarget,
+  artifactId: string,
+  mimeType: string,
+): Promise<string> {
+  const scope = "botId" in target ? `bot:${target.botId}` : `group:${target.groupId}`;
+  const key = `${scope}:${artifactId}`;
+  imageArtifactRequests.set(key, { target, artifactId, mimeType });
+  return imageArtifactUris.get(key);
 }

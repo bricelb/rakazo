@@ -1,4 +1,6 @@
 import { useLocalSearchParams, useRouter } from "expo-router";
+import * as ScreenOrientation from "expo-screen-orientation";
+import { useEffect } from "react";
 import { initialWindowMetrics, SafeAreaProvider } from "react-native-safe-area-context";
 import { ImageArtifactViewer } from "../components/image-artifact-viewer";
 import type { MobileArtifactTarget } from "../lib/artifact-open";
@@ -18,6 +20,19 @@ export default function ImageScreen() {
     groupId?: string | string[];
   }>();
   const groupId = first(params.groupId);
+
+  useEffect(() => {
+    // Most attached images are landscape desktop screenshots: let this screen rotate, like the
+    // full-screen computer view; the rest of the app stays portrait.
+    void ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.DEFAULT).catch(
+      () => undefined,
+    );
+    return () => {
+      void ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP).catch(
+        () => undefined,
+      );
+    };
+  }, []);
   const threadTarget: MobileArtifactTarget = groupId ? { groupId } : { botId: first(params.botId) };
   // The app root mounts no SafeAreaProvider; this screen hides the native header, so it
   // provides its own, seeded with the window metrics so the first frame already has the

@@ -2,6 +2,7 @@
   "expo": {
     "name": "Rakazo",
     "slug": "rakazo",
+    "owner": "inbox-zero",
     "scheme": "rakazo",
     "version": "1.0.3",
     "orientation": "default",
@@ -55,7 +56,7 @@
       "./plugins/with-scene-lifecycle"
     ],
     "ios": {
-      "bundleIdentifier": "net.brice.rakazo",
+      "bundleIdentifier": "com.rakazo.app",
       "buildNumber": "1",
       "supportsTablet": false,
       "icon": "../../packages/ui-tokens/assets/Rakazo.icon",
@@ -94,6 +95,9 @@
     },
     "runtimeVersion": {
       "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/07f7eb04-45e3-47fe-9374-99a2f991131e"
     }
   }
 }

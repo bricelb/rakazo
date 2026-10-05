@@ -58,4 +58,20 @@ describe("createKeyedPromiseCache", () => {
     await expect(cache.get("one")).resolves.toBe("uri");
     expect(calls).toBe(2);
   });
+
+  it("only forgets a key for the promise that observed the stale value", async () => {
+    let calls = 0;
+    const cache = createKeyedPromiseCache(async () => {
+      calls += 1;
+      return `uri-${calls}`;
+    });
+    const stale = cache.get("one");
+    await stale;
+    cache.forget("one", stale);
+    const fresh = cache.get("one");
+    cache.forget("one", stale); // a second caller that also saw the stale file must not evict the retry
+    expect(cache.get("one")).toBe(fresh);
+    await expect(fresh).resolves.toBe("uri-2");
+    expect(calls).toBe(2);
+  });
 });

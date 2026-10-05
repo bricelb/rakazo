@@ -68,11 +68,13 @@ export async function imageArtifactUri(
   const scope = "botId" in target ? `bot:${target.botId}` : `group:${target.groupId}`;
   const key = `${scope}:${artifactId}`;
   imageArtifactRequests.set(key, { target, artifactId, mimeType });
-  const uri = await imageArtifactUris.get(key);
+  const entry = imageArtifactUris.get(key);
+  const uri = await entry;
   // The OS may purge the cache directory between visits; a remembered URI is only as good
-  // as the file behind it, so download again when it is gone.
+  // as the file behind it, so download again when it is gone. Forgetting by entry keeps the
+  // retry single-flight when several bubbles notice the missing file at once.
   if (new File(uri).exists) return uri;
-  imageArtifactUris.forget(key);
+  imageArtifactUris.forget(key, entry);
   return imageArtifactUris.get(key);
 }
 

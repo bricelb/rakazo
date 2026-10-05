@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Alert, Image, Pressable, Text, View } from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import Animated, { useAnimatedStyle, useSharedValue, withTiming } from "react-native-reanimated";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { mobileTokens } from "../lib/appearance";
 import type { MobileArtifactTarget } from "../lib/artifact-open";
 import { imageArtifactUri, shareLocalFile } from "../lib/artifact-open";
@@ -142,6 +142,7 @@ export function ImageArtifactViewer({
 }) {
   const { t } = useI18n();
   const tokens = mobileTokens();
+  const insets = useSafeAreaInsets();
   const [box, setBox] = useState<ImageSize | null>(null);
   const [state, setState] = useState<
     | { status: "loading" }
@@ -195,9 +196,16 @@ export function ImageArtifactViewer({
       );
 
   return (
-    // The app root does not mount SafeAreaProvider, so useSafeAreaInsets() throws.
-    // This view reads the insets itself, including Android edge-to-edge.
-    <SafeAreaView style={{ flex: 1, backgroundColor: tokens.background }}>
+    // Insets come from the SafeAreaProvider mounted by app/image.tsx, seeded with the window
+    // metrics so they are right on the first frame.
+    <View
+      style={{
+        flex: 1,
+        backgroundColor: tokens.background,
+        paddingTop: insets.top,
+        paddingBottom: insets.bottom,
+      }}
+    >
       <View
         style={{
           height: HEADER_HEIGHT,
@@ -283,6 +291,6 @@ export function ImageArtifactViewer({
           </Text>
         )}
       </View>
-    </SafeAreaView>
+    </View>
   );
 }

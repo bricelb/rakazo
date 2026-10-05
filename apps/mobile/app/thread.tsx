@@ -80,10 +80,8 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AppConnectCard } from "../components/AppConnectCard";
 import { AskActions } from "../components/AskActions";
 import { BotAvatar } from "../components/bot-avatar";
-import {
-  type ImageArtifactPreviewTarget,
-  ImageArtifactViewer,
-} from "../components/image-artifact-viewer";
+import type { ImageArtifactPreviewTarget } from "../components/image-artifact-viewer";
+import { ImageArtifactViewer } from "../components/image-artifact-viewer";
 import { InlineImageAttachment } from "../components/inline-image-attachment";
 import { McpApprovalCard } from "../components/McpApprovalCard";
 import {

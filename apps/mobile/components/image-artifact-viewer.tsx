@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Alert, Image, Pressable, Text, View } from "react-native";
+import { Alert, Image, Pressable, StyleSheet, Text, View } from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import Animated, { useAnimatedStyle, useSharedValue, withTiming } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -45,6 +45,17 @@ function ZoomableImage({
   const translateY = useSharedValue(0);
   const savedX = useSharedValue(0);
   const savedY = useSharedValue(0);
+
+  // A rotation changes the box and the displayed size; a pan that fit before may now sit
+  // outside the viewport, so start again from 1x.
+  useEffect(() => {
+    scale.value = 1;
+    savedScale.value = 1;
+    translateX.value = 0;
+    translateY.value = 0;
+    savedX.value = 0;
+    savedY.value = 0;
+  }, [box.width, box.height, scale, savedScale, translateX, translateY, savedX, savedY]);
 
   const pinch = Gesture.Pinch()
     .onUpdate((event) => {
@@ -199,34 +210,24 @@ export function ImageArtifactViewer({
     // Insets come from the SafeAreaProvider mounted by app/image.tsx, seeded with the window
     // metrics so they are right on the first frame.
     <View
-      style={{
-        flex: 1,
-        backgroundColor: tokens.background,
-        paddingTop: insets.top,
-        paddingBottom: insets.bottom,
-      }}
+      style={[
+        styles.screen,
+        {
+          backgroundColor: tokens.background,
+          paddingTop: insets.top,
+          paddingBottom: insets.bottom,
+        },
+      ]}
     >
-      <View
-        style={{
-          height: HEADER_HEIGHT,
-          flexDirection: "row",
-          alignItems: "center",
-          borderBottomWidth: 1,
-          borderBottomColor: tokens.border,
-          paddingHorizontal: 12,
-        }}
-      >
-        <Text
-          numberOfLines={1}
-          style={{ flex: 1, color: tokens.foreground, fontSize: 15, fontWeight: "500" }}
-        >
+      <View style={[styles.header, { borderBottomColor: tokens.border }]}>
+        <Text numberOfLines={1} style={[styles.title, { color: tokens.foreground }]}>
           {target.name}
         </Text>
         <Pressable
           accessibilityLabel={t("Share {name}", { name: target.name })}
           hitSlop={8}
           onPress={share}
-          style={{ padding: 10 }}
+          style={styles.headerButton}
         >
           <NativeSymbol
             ios="square.and.arrow.up"
@@ -239,18 +240,13 @@ export function ImageArtifactViewer({
           accessibilityLabel={t("Close image")}
           hitSlop={8}
           onPress={onClose}
-          style={{ padding: 10 }}
+          style={styles.headerButton}
         >
           <NativeSymbol ios="xmark" android="close" size={20} color={tokens.mutedForeground} />
         </Pressable>
       </View>
       <View
-        style={{
-          flex: 1,
-          alignItems: "center",
-          justifyContent: "center",
-          overflow: "hidden",
-        }}
+        style={styles.stage}
         onLayout={(event) => {
           const { width, height } = event.nativeEvent.layout;
           if (width <= 0 || height <= 0) return;
@@ -267,30 +263,27 @@ export function ImageArtifactViewer({
             onClose={onClose}
             onError={() => fail(new Error(t("Could not load image")))}
           />
-        ) : state.status === "error" ? (
-          <Text
-            style={{
-              color: tokens.mutedForeground,
-              fontSize: 15,
-              textAlign: "center",
-              padding: 24,
-            }}
-          >
-            {state.message}
-          </Text>
         ) : (
-          <Text
-            style={{
-              color: tokens.mutedForeground,
-              fontSize: 15,
-              textAlign: "center",
-              padding: 24,
-            }}
-          >
-            {t("Loading image…")}
+          <Text style={[styles.message, { color: tokens.mutedForeground }]}>
+            {state.status === "error" ? state.message : t("Loading image…")}
           </Text>
         )}
       </View>
     </View>
   );
 }
+
+const styles = StyleSheet.create({
+  screen: { flex: 1 },
+  header: {
+    height: HEADER_HEIGHT,
+    flexDirection: "row",
+    alignItems: "center",
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    paddingHorizontal: 12,
+  },
+  title: { flex: 1, fontSize: 15, fontWeight: "500" },
+  headerButton: { padding: 10 },
+  stage: { flex: 1, alignItems: "center", justifyContent: "center", overflow: "hidden" },
+  message: { fontSize: 15, textAlign: "center", padding: 24 },
+});

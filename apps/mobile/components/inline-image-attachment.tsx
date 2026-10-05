@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import type { PressableProps } from "react-native";
-import { Image, Pressable, Text, useWindowDimensions, View } from "react-native";
+import { Image, Pressable, StyleSheet, Text, useWindowDimensions, View } from "react-native";
 import { mobileTokens } from "../lib/appearance";
 import type { MobileArtifactTarget } from "../lib/artifact-open";
 import { imageArtifactUri } from "../lib/artifact-open";
@@ -80,7 +80,7 @@ export function InlineImageAttachment({
       >
         <Image
           source={{ uri: state.uri }}
-          style={{ ...size, borderRadius: 12, backgroundColor: tokens.muted }}
+          style={[styles.image, size, { backgroundColor: tokens.muted }]}
           accessibilityIgnoresInvertColors
         />
       </Pressable>
@@ -88,21 +88,25 @@ export function InlineImageAttachment({
   }
   return (
     <Pressable {...pressableProps} onPress={state.status === "error" ? onOpen : undefined}>
-      <View
-        style={{
-          minHeight: 44,
-          justifyContent: "center",
-          borderRadius: 12,
-          backgroundColor: tokens.muted,
-          paddingHorizontal: 12,
-          paddingVertical: 10,
-        }}
-      >
-        <Text style={{ color: labelColor, fontSize: 15 }}>🖼 {name}</Text>
-        <Text style={{ color: tokens.mutedForeground, fontSize: 13, marginTop: 2 }}>
+      <View style={[styles.placeholder, { backgroundColor: tokens.muted }]}>
+        <Text style={[styles.label, { color: labelColor }]}>🖼 {name}</Text>
+        <Text style={[styles.hint, { color: tokens.mutedForeground }]}>
           {state.status === "loading" ? t("Loading image…") : t("Tap to open")}
         </Text>
       </View>
     </Pressable>
   );
 }
+
+const styles = StyleSheet.create({
+  image: { borderRadius: 12 },
+  placeholder: {
+    minHeight: 44,
+    justifyContent: "center",
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  label: { fontSize: 15 },
+  hint: { fontSize: 13, marginTop: 2 },
+});

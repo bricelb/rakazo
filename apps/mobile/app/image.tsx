@@ -23,13 +23,17 @@ export default function ImageScreen() {
 
   useEffect(() => {
     // Most attached images are landscape desktop screenshots: let this screen rotate, like the
-    // full-screen computer view; the rest of the app stays portrait.
-    void ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.DEFAULT).catch(
+    // full-screen computer view; the rest of the app stays portrait. The portrait lock on
+    // dismissal waits for the unlock to settle, so a quick close cannot leave the thread
+    // rotating because the two asynchronous calls landed out of order.
+    const unlocked = ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.DEFAULT).catch(
       () => undefined,
     );
     return () => {
-      void ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP).catch(
-        () => undefined,
+      void unlocked.then(() =>
+        ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP).catch(
+          () => undefined,
+        ),
       );
     };
   }, []);

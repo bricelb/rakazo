@@ -18,6 +18,7 @@ import {
   buildComposerMentionOptions,
   type ComposerMention,
   cloudAgentHttpsUrl,
+  formatMessageTime,
   groupVoiceChats,
   isApprovalAskBlock,
   isRunTerminalEvent,
@@ -80,12 +81,15 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AppConnectCard } from "../components/AppConnectCard";
 import { AskActions } from "../components/AskActions";
 import { BotAvatar } from "../components/bot-avatar";
+import type { ImageArtifactPreviewTarget } from "../components/image-artifact-viewer";
+import { InlineImageAttachment } from "../components/inline-image-attachment";
 import { McpApprovalCard } from "../components/McpApprovalCard";
 import {
   MarkdownArtifactPreview,
   type MarkdownArtifactPreviewTarget,
 } from "../components/markdown-artifact-preview";
 import { NativeSymbol } from "../components/native-symbol";
+import { SelectTextSheet } from "../components/select-text-sheet";
 import { VoiceChatCard } from "../components/VoiceChatCard";
 import { WorkingIndicator } from "../components/WorkingIndicator";
 import {
@@ -104,6 +108,7 @@ import {
   mobileThreadRefreshResult,
   prependMobileMessagePage,
   rpc,
+  selectableMobileMessageText,
   selectedSpaceId,
   selectSpace,
   subscribeThread,
@@ -117,6 +122,7 @@ import { loadDeviceVoiceEnabled } from "../lib/device-voice";
 import { available as dictationAvailable } from "../lib/dictation";
 import { cancelFocusPrompt, focusPromptThreadActive } from "../lib/focus-prompt";
 import { dateLocaleForUi, t, useI18n } from "../lib/i18n";
+import { isInlineImageMimeType } from "../lib/inline-image";
 import { saveLastBotId } from "../lib/last-bot";
 import {
   dismissThreadNotifications,
@@ -148,6 +154,7 @@ import {
   getCachedResponseStreamingEnabled,
   subscribeResponseStreaming,
 } from "../lib/response-streaming";
+import { selectableTextFromMarkdown } from "../lib/selectable-text";
 import {
   type ThreadScrollAction,
   ThreadScrollBehavior,
@@ -397,6 +404,7 @@ function Thread() {
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loadingOlder, setLoadingOlder] = useState(false);
+  const [selectableText, setSelectableText] = useState<string | null>(null);
   const [markdownPreview, setMarkdownPreview] = useState<MarkdownArtifactPreviewTarget | null>(
     null,
   );
@@ -1506,6 +1514,7 @@ function Thread() {
   }
 
   function messageActionProps(message: MobileMessage): MessageActionProps {
+    const messageText = selectableMobileMessageText(message);
     const actions = [
       {
         name: "reply",
@@ -1542,6 +1551,18 @@ function Thread() {
       ...(message.role === "bot" && !onCall && blockText(message)
         ? [{ name: "speak", text: t("Speak message"), onPress: () => void speak(message) }]
         : []),
+      ...(messageText.trim()
+        ? [
+            {
+              name: "select",
+              text: t("Select text"),
+              onPress: () =>
+                setSelectableText(
+                  message.role === "user" ? messageText : selectableTextFromMarkdown(messageText),
+                ),
+            },
+          ]
+        : []),
       {
         name: "copy",
         text: t("Copy"),
@@ -1556,10 +1577,7 @@ function Thread() {
         presentMessageActionSheet({
           actions,
           title: message.createdAt
-            ? new Date(message.createdAt).toLocaleTimeString(dateLocaleForUi(), {
-                hour: "numeric",
-                minute: "2-digit",
-              })
+            ? formatMessageTime(message.createdAt, dateLocaleForUi())
             : undefined,
           cancel: t("Cancel"),
           more: t("More"),
@@ -1649,6 +1667,12 @@ function Thread() {
               onAnswer={answerMessage}
               onOpenBot={openBot}
               onPreviewMarkdown={setMarkdownPreview}
+              onPreviewImage={(target) =>
+                router.push({
+                  pathname: "/image",
+                  params: { ...target, ...(groupId ? { groupId } : { botId }) },
+                })
+              }
               actionProps={actionProps}
             />
           </Pressable>
@@ -2350,6 +2374,7 @@ function Thread() {
           </View>
         </View>
       </Modal>
+      <SelectTextSheet text={selectableText} onClose={() => setSelectableText(null)} />
       {markdownPreview && artifactTarget ? (
         <MarkdownArtifactPreview
           threadTarget={artifactTarget}
@@ -2637,6 +2662,7 @@ const MessageBubble = memo(function MessageBubble({
   onAnswer,
   onOpenBot,
   onPreviewMarkdown,
+  onPreviewImage,
   actionProps,
 }: {
   botId: string;
@@ -2650,6 +2676,7 @@ const MessageBubble = memo(function MessageBubble({
   onAnswer: (message: MobileMessage, answer: string, username?: string) => Promise<void>;
   onOpenBot: (botId: string, name: string) => void;
   onPreviewMarkdown: (target: MarkdownArtifactPreviewTarget) => void;
+  onPreviewImage: (target: ImageArtifactPreviewTarget) => void;
   actionProps: MessageActionProps;
 }) {
   const colorScheme = useResolvedAppearance();
@@ -3127,34 +3154,55 @@ const MessageBubble = memo(function MessageBubble({
         ) : null}
         {attachments.map((attachment, index) =>
           attachment.kind === "image" ? (
-            <Pressable
-              {...actionProps}
-              key={`${attachment.artifactId ?? attachment.name ?? "image"}-${index}`}
-              onPress={() =>
-                attachment.artifactId
-                  ? void openMobileArtifact(
-                      artifactTarget,
-                      attachment.artifactId,
-                      attachment.name ?? t("Image"),
-                      attachment.mimeType ?? "image/png",
-                    ).catch((err) =>
-                      Alert.alert(
-                        t("Could not open image"),
-                        err instanceof Error ? err.message : t("Try again."),
-                      ),
-                    )
-                  : undefined
-              }
-            >
-              <Text
-                style={{
-                  color: message.role === "user" ? tokens.secondaryForeground : tokens.foreground,
-                  fontSize: 15,
-                }}
+            attachment.artifactId && isInlineImageMimeType(attachment.mimeType) ? (
+              <InlineImageAttachment
+                key={`${attachment.artifactId}-${index}`}
+                threadTarget={artifactTarget}
+                artifactId={attachment.artifactId}
+                name={attachment.name ?? t("Image")}
+                mimeType={attachment.mimeType ?? "image/png"}
+                labelColor={
+                  message.role === "user" ? tokens.secondaryForeground : tokens.foreground
+                }
+                pressableProps={actionProps}
+                onOpen={() =>
+                  onPreviewImage({
+                    artifactId: attachment.artifactId!,
+                    name: attachment.name ?? t("Image"),
+                    mimeType: attachment.mimeType ?? "image/png",
+                  })
+                }
+              />
+            ) : (
+              <Pressable
+                {...actionProps}
+                key={`${attachment.artifactId ?? attachment.name ?? "image"}-${index}`}
+                onPress={() =>
+                  attachment.artifactId
+                    ? void openMobileArtifact(
+                        artifactTarget,
+                        attachment.artifactId,
+                        attachment.name ?? t("Image"),
+                        attachment.mimeType ?? "image/png",
+                      ).catch((err) =>
+                        Alert.alert(
+                          t("Could not open image"),
+                          err instanceof Error ? err.message : t("Try again."),
+                        ),
+                      )
+                    : undefined
+                }
               >
-                🖼 {attachment.name ?? t("Image")}
-              </Text>
-            </Pressable>
+                <Text
+                  style={{
+                    color: message.role === "user" ? tokens.secondaryForeground : tokens.foreground,
+                    fontSize: 15,
+                  }}
+                >
+                  🖼 {attachment.name ?? t("Image")}
+                </Text>
+              </Pressable>
+            )
           ) : (
             <Pressable
               {...actionProps}

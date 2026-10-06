@@ -166,16 +166,9 @@ function TableScrollView({
   );
 }
 
-// Keep links as Text so they stay inside textgroup; Pressable (a View) is laid out
-// outside the text flow and collapses the bubble height, overlapping later messages.
-/**
- * List items are a row of marker + content. The library gives the content `flex: 1`, a zero
- * flex basis, so a list contributes no intrinsic width: inside a bubble that sizes itself to its
- * content (a bot message on mobile), a list-only message collapsed to one character per line.
- * Growing from an automatic basis keeps the text's natural width while still shrinking to fit.
- */
 type RenderRule = NonNullable<RenderRules["link"]>;
 
+// Automatic basis: `flex: 1` is zero-width and collapses a shrink-wrapped list bubble.
 function listItemRule(
   node: Parameters<RenderRule>[0],
   children: ReactNode[],
@@ -219,6 +212,8 @@ function listItemRule(
   );
 }
 
+// Keep links as Text so they stay inside textgroup; Pressable (a View) is laid out
+// outside the text flow and collapses the bubble height, overlapping later messages.
 const renderRules: RenderRules = {
   list_item: listItemRule,
   text: (node, _children, parents, styleMap, inherited) => (

@@ -179,8 +179,7 @@ describe("user message links", () => {
 
 describe("native markdown lists", () => {
   it("gives list items an intrinsic width instead of a zero flex basis", () => {
-    // A bubble that sizes itself to its content (bot messages on mobile) collapsed a list-only
-    // message to one character per line when the item content had `flex: 1`.
+    // `flex: 1` on list content collapsed a shrink-wrapped bubble to one character wide.
     const html = renderToStaticMarkup(
       <ChatMarkdown>{"- premier point\n- second point"}</ChatMarkdown>,
     );

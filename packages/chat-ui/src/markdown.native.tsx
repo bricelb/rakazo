@@ -181,10 +181,11 @@ function listItemRule(
     fontSize: body?.fontSize,
     lineHeight: body?.lineHeight,
   };
-  // The nearest list decides the marker, so an ordered list nested in a bulleted one numbers.
-  const list = [...parent]
-    .reverse()
-    .find((ancestor) => ancestor.type === "bullet_list" || ancestor.type === "ordered_list");
+  // `parent` lists ancestors nearest first; the nearest list decides the marker, so an ordered
+  // list nested in a bulleted one is numbered.
+  const list = parent.find(
+    (ancestor) => ancestor.type === "bullet_list" || ancestor.type === "ordered_list",
+  );
   if (list?.type === "bullet_list") {
     return (
       <View key={node.key} style={styleMap._VIEW_SAFE_list_item}>

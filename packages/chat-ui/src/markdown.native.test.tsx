@@ -191,6 +191,9 @@ describe("native markdown lists", () => {
     expect(ordered).toContain("3.");
     expect(ordered).toContain("4.");
     expect(ordered).not.toContain('data-flex="1"');
+  });
+});
+
 describe("native markdown images", () => {
   it("shows a remote image as a tappable link instead of loading it", async () => {
     const html = renderToStaticMarkup(

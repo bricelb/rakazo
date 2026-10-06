@@ -181,7 +181,11 @@ function listItemRule(
     fontSize: body?.fontSize,
     lineHeight: body?.lineHeight,
   };
-  if (parent.some((ancestor) => ancestor.type === "bullet_list")) {
+  // The nearest list decides the marker, so an ordered list nested in a bulleted one numbers.
+  const list = [...parent]
+    .reverse()
+    .find((ancestor) => ancestor.type === "bullet_list" || ancestor.type === "ordered_list");
+  if (list?.type === "bullet_list") {
     return (
       <View key={node.key} style={styleMap._VIEW_SAFE_list_item}>
         <Text style={[marker, styleMap.bullet_list_icon]} accessible={false}>
@@ -191,9 +195,8 @@ function listItemRule(
       </View>
     );
   }
-  if (parent.some((ancestor) => ancestor.type === "ordered_list")) {
-    const orderedList = parent.find((ancestor) => ancestor.type === "ordered_list");
-    const start = Number(orderedList?.attributes?.start);
+  if (list?.type === "ordered_list") {
+    const start = Number(list.attributes?.start);
     const number = Number.isFinite(start) ? start + node.index : node.index + 1;
     return (
       <View key={node.key} style={styleMap._VIEW_SAFE_list_item}>

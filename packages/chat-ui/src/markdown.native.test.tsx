@@ -191,6 +191,16 @@ describe("native markdown lists", () => {
     expect(ordered).toContain("4.");
     expect(ordered).not.toContain('data-flex="1"');
   });
+
+  it("numbers an ordered list nested inside a bulleted one", () => {
+    const html = renderToStaticMarkup(
+      <ChatMarkdown>{"- outer\n  1. first\n  2. second"}</ChatMarkdown>,
+    );
+    expect(html).toContain("1.");
+    expect(html).toContain("2.");
+    // One bullet for the outer item, none for the nested numbered items.
+    expect(html.split("\u00B7").length - 1).toBe(1);
+  });
 });
 
 describe("native markdown images", () => {

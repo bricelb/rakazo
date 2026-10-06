@@ -52,7 +52,7 @@ vi.mock("react-native", async () => {
     };
 
   return {
-    View: mockComponent("rn-view", ["minWidth"]),
+    View: mockComponent("rn-view", ["minWidth", "flex", "flexGrow"]),
     Text: mockComponent("rn-text", ["accessibilityRole"]),
     ScrollView: mockComponent("rn-scroll-view", ["horizontal"]),
     Pressable: mockComponent("rn-pressable", ["accessibilityRole"]),
@@ -173,5 +173,22 @@ describe("user message links", () => {
       root.unmount();
     });
     container.remove();
+  });
+});
+
+describe("native markdown lists", () => {
+  it("gives list items an intrinsic width instead of a zero flex basis", () => {
+    // A bubble that sizes itself to its content (bot messages on mobile) collapsed a list-only
+    // message to one character per line when the item content had `flex: 1`.
+    const html = renderToStaticMarkup(
+      <ChatMarkdown>{"- premier point\n- second point"}</ChatMarkdown>,
+    );
+    expect(html).toContain('data-flex-grow="1"');
+    expect(html).not.toContain('data-flex="1"');
+    expect(html).toContain("premier point");
+    const ordered = renderToStaticMarkup(<ChatMarkdown>{"3. trois\n4. quatre"}</ChatMarkdown>);
+    expect(ordered).toContain("3.");
+    expect(ordered).toContain("4.");
+    expect(ordered).not.toContain('data-flex="1"');
   });
 });

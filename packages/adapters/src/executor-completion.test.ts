@@ -236,17 +236,44 @@ describe("stripNoResponseReply", () => {
     });
   });
 
-  it("keeps prose that merely repeats the sentinel around words", () => {
-    const text = `${NO_RESPONSE} and ${NO_RESPONSE}`;
+  it("keeps prose that merely repeats the sentinel between words", () => {
+    const text = `first ${NO_RESPONSE} and ${NO_RESPONSE} last`;
     const blocks = [{ kind: "text" as const, text }];
     expect(stripNoResponseReply(text, blocks)).toEqual({ assembled: text, blocks });
   });
 
-  it("does not strip the sentinel when extra prose is present", () => {
+  it("keeps a reply with prose but drops a stray sentinel at its start", () => {
     const text = `${NO_RESPONSE} all clear`;
     const blocks = [{ kind: "text" as const, text }];
+    const stripped = stripNoResponseReply(text, blocks);
+    expect(stripped).toEqual({
+      assembled: "all clear",
+      blocks: [{ kind: "text", text: "all clear" }],
+    });
+    expect(completionMarksUnread("routine", stripped.assembled)).toBe(true);
+  });
+
+  it("drops a stray sentinel glued to the end of a report, keeping the report", () => {
+    // Observed on a routine: the model wrote its report and then also emitted the silence
+    // signal; segments are joined without a separator.
+    const report =
+      "**À surveiller** : UPS 2U, mémoire 96 %. Proposition : examiner sans modification.";
+    const text = `${report}${NO_RESPONSE}`;
+    const stripped = stripNoResponseReply(text, [
+      { kind: "text", text: report },
+      { kind: "text", text: NO_RESPONSE },
+    ]);
+    expect(stripped).toEqual({ assembled: report, blocks: [{ kind: "text", text: report }] });
+    expect(completionNotificationBody(stripped.assembled, stripped.blocks)).not.toContain(
+      NO_RESPONSE,
+    );
+    expect(completionMarksUnread("routine", stripped.assembled)).toBe(true);
+  });
+
+  it("leaves a word that merely contains the sentinel alone", () => {
+    const text = `see NO_RESPONSE_POLICY`;
+    const blocks = [{ kind: "text" as const, text }];
     expect(stripNoResponseReply(text, blocks)).toEqual({ assembled: text, blocks });
-    expect(completionMarksUnread("routine", text)).toBe(true);
   });
 
   it("fails closed on case, punctuation, and wrapped variants", () => {

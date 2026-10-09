@@ -30,10 +30,23 @@ export function isExactNoResponse(text: string): boolean {
 }
 
 /**
- * Exact-only silent-reply stripper. If the trimmed final text is exactly
- * `NO_RESPONSE`, drop that text so the run can finish with no chat bubble.
- * Sibling tool/step blocks do not count as extra prose. Any surrounding
- * words leave the reply intact.
+ * Sentinel runs standing at either edge of a text, glued to it or not, with nothing of the
+ * token left inside a longer word. A model that writes a report and then also emits its
+ * silence signal yields `…sans modification.NO_RESPONSE`; the report is the reply, the
+ * token is noise the user should never read.
+ */
+const STRAY_EDGE_SENTINEL =
+  /^(?:\s*NO_RESPONSE(?![A-Za-z0-9_]))+\s*|(?:\s*(?<![A-Za-z0-9_])NO_RESPONSE)+\s*$/g;
+
+function withoutStraySentinels(text: string): string {
+  return text.replace(STRAY_EDGE_SENTINEL, "");
+}
+
+/**
+ * Silent-reply stripper. If the trimmed final text is exactly `NO_RESPONSE`,
+ * drop that text so the run can finish with no chat bubble. Sibling tool/step
+ * blocks do not count as extra prose. Surrounding words keep the reply; only a
+ * stray sentinel at the start or end of that prose is removed from it.
  */
 export function stripNoResponseReply(
   assembled: string,
@@ -42,7 +55,7 @@ export function stripNoResponseReply(
   const assembledTrimmed = assembled.trim();
   const blockText = joinedText(blocks).trim();
   const visible = assembledTrimmed || blockText;
-  if (!isExactNoResponse(visible)) return { assembled, blocks };
+  if (!isExactNoResponse(visible)) return withoutStraySentinelsAtEdges(assembled, blocks);
   // Fail closed: extra prose in either the assembled final or a text block keeps the reply.
   if (assembledTrimmed && blockText && !isExactNoResponse(blockText)) {
     return { assembled, blocks };
@@ -51,4 +64,22 @@ export function stripNoResponseReply(
     assembled: "",
     blocks: blocks.filter((block) => block.kind !== "text"),
   };
+}
+
+/** A reply with prose stays a reply; a sentinel misplaced at its edge is dropped from what the user sees. */
+function withoutStraySentinelsAtEdges(
+  assembled: string,
+  blocks: MessageBlock[],
+): { assembled: string; blocks: MessageBlock[] } {
+  let changed = false;
+  const cleanedAssembled = withoutStraySentinels(assembled);
+  if (cleanedAssembled !== assembled) changed = true;
+  const cleanedBlocks = blocks.flatMap((block) => {
+    if (block.kind !== "text") return [block];
+    const text = withoutStraySentinels(block.text);
+    if (text === block.text) return [block];
+    changed = true;
+    return text.trim() ? [{ ...block, text }] : [];
+  });
+  return changed ? { assembled: cleanedAssembled, blocks: cleanedBlocks } : { assembled, blocks };
 }

@@ -29,29 +29,39 @@ export function isExactNoResponse(text: string): boolean {
   return SENTINEL_ONLY.test(text.trim());
 }
 
-/** Find whole edge runs before checking the word boundaries outside them. */
+const IDENTIFIER_CHAR = /[A-Za-z0-9_]/;
+const WHITESPACE = /\s/;
+
+/**
+ * Edge runs of the sentinel, glued or spaced. Each token must end at a word
+ * boundary to count: a token that continues into an identifier such as
+ * `NO_RESPONSE_POLICY` is a word, so the run stops at the last clean token
+ * before it instead of being abandoned altogether.
+ */
 function proseRange(text: string): { start: number; end: number } {
   let cursor = text.length - text.trimStart().length;
-  let tokenEnd = 0;
+  let start = 0;
   while (text.startsWith(NO_RESPONSE, cursor)) {
     cursor += NO_RESPONSE.length;
-    tokenEnd = cursor;
-    while (cursor < text.length && /\s/.test(text[cursor]!)) cursor++;
+    if (!IDENTIFIER_CHAR.test(text[cursor] ?? "")) {
+      while (cursor < text.length && WHITESPACE.test(text[cursor]!)) cursor++;
+      start = cursor;
+    } else if (!text.startsWith(NO_RESPONSE, cursor)) {
+      break;
+    }
   }
-  const start = tokenEnd && !/[A-Za-z0-9_]/.test(text[tokenEnd] ?? "") ? cursor : 0;
-
   // Scan backwards from the end so long whitespace cannot cause suffix backtracking.
   cursor = text.trimEnd().length;
-  let tokenStart = text.length;
-  while (cursor >= start + NO_RESPONSE.length && text.endsWith(NO_RESPONSE, cursor)) {
+  let end = text.length;
+  while (cursor - NO_RESPONSE.length >= start && text.endsWith(NO_RESPONSE, cursor)) {
     cursor -= NO_RESPONSE.length;
-    tokenStart = cursor;
-    while (cursor > start && /\s/.test(text[cursor - 1]!)) cursor--;
+    if (cursor <= start || !IDENTIFIER_CHAR.test(text[cursor - 1] ?? "")) {
+      while (cursor > start && WHITESPACE.test(text[cursor - 1]!)) cursor--;
+      end = cursor;
+    } else if (!(cursor - NO_RESPONSE.length >= start && text.endsWith(NO_RESPONSE, cursor))) {
+      break;
+    }
   }
-  const end =
-    tokenStart < text.length && !/[A-Za-z0-9_]/.test(text[tokenStart - 1] ?? "")
-      ? cursor
-      : text.length;
   return { start, end };
 }
 

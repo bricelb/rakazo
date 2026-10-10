@@ -342,6 +342,30 @@ describe("stripNoResponseReply", () => {
     expect(stripNoResponseReply(text, blocks)).toEqual({ assembled: text, blocks });
   });
 
+  it("drops a standalone leading sentinel but keeps the identifier that follows it", () => {
+    const text = `${NO_RESPONSE} NO_RESPONSE_POLICY is enabled.`;
+    const blocks = [{ kind: "text" as const, text }];
+    expect(stripNoResponseReply(text, blocks)).toEqual({
+      assembled: "NO_RESPONSE_POLICY is enabled.",
+      blocks: [{ kind: "text", text: "NO_RESPONSE_POLICY is enabled." }],
+    });
+  });
+
+  it("drops a standalone trailing sentinel but keeps the identifier before it", () => {
+    const text = `see POLICY_NO_RESPONSE ${NO_RESPONSE}`;
+    const blocks = [{ kind: "text" as const, text }];
+    expect(stripNoResponseReply(text, blocks)).toEqual({
+      assembled: "see POLICY_NO_RESPONSE",
+      blocks: [{ kind: "text", text: "see POLICY_NO_RESPONSE" }],
+    });
+  });
+
+  it("keeps a glued run that ends inside an identifier", () => {
+    const text = `${NO_RESPONSE}NO_RESPONSE_POLICY is enabled.`;
+    const blocks = [{ kind: "text" as const, text }];
+    expect(stripNoResponseReply(text, blocks)).toEqual({ assembled: text, blocks });
+  });
+
   it("leaves a word that merely contains the sentinel alone", () => {
     const text = `see NO_RESPONSE_POLICY`;
     const blocks = [{ kind: "text" as const, text }];

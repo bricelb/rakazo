@@ -29,17 +29,30 @@ export function isExactNoResponse(text: string): boolean {
   return SENTINEL_ONLY.test(text.trim());
 }
 
-/**
- * Sentinel runs standing at either edge of a text, glued to it or not, with nothing of the
- * token left inside a longer word. A model that writes a report and then also emits its
- * silence signal yields `…sans modification.NO_RESPONSE`; the report is the reply, the
- * token is noise the user should never read.
- */
-const STRAY_EDGE_SENTINEL =
-  /^(?:\s*NO_RESPONSE(?![A-Za-z0-9_]))+\s*|(?:\s*(?<![A-Za-z0-9_])NO_RESPONSE)+\s*$/g;
+/** Find whole edge runs before checking the word boundaries outside them. */
+function proseRange(text: string): { start: number; end: number } {
+  let cursor = text.length - text.trimStart().length;
+  let tokenEnd = 0;
+  while (text.startsWith(NO_RESPONSE, cursor)) {
+    cursor += NO_RESPONSE.length;
+    tokenEnd = cursor;
+    while (cursor < text.length && /\s/.test(text[cursor]!)) cursor++;
+  }
+  const start = tokenEnd && !/[A-Za-z0-9_]/.test(text[tokenEnd] ?? "") ? cursor : 0;
 
-function withoutStraySentinels(text: string): string {
-  return text.replace(STRAY_EDGE_SENTINEL, "");
+  // Scan backwards from the end so long whitespace cannot cause suffix backtracking.
+  cursor = text.trimEnd().length;
+  let tokenStart = text.length;
+  while (cursor >= start + NO_RESPONSE.length && text.endsWith(NO_RESPONSE, cursor)) {
+    cursor -= NO_RESPONSE.length;
+    tokenStart = cursor;
+    while (cursor > start && /\s/.test(text[cursor - 1]!)) cursor--;
+  }
+  const end =
+    tokenStart < text.length && !/[A-Za-z0-9_]/.test(text[tokenStart - 1] ?? "")
+      ? cursor
+      : text.length;
+  return { start, end };
 }
 
 /**
@@ -71,15 +84,22 @@ function withoutStraySentinelsAtEdges(
   assembled: string,
   blocks: MessageBlock[],
 ): { assembled: string; blocks: MessageBlock[] } {
-  let changed = false;
-  const cleanedAssembled = withoutStraySentinels(assembled);
-  if (cleanedAssembled !== assembled) changed = true;
-  const cleanedBlocks = blocks.flatMap((block) => {
+  const assembledRange = proseRange(assembled);
+  const cleanedAssembled = assembled.slice(assembledRange.start, assembledRange.end);
+  const blockText = joinedText(blocks);
+  const { start, end } = proseRange(blockText);
+  if (start === 0 && end === blockText.length) {
+    return { assembled: cleanedAssembled, blocks };
+  }
+
+  let offset = 0;
+  const cleanedBlocks = blocks.flatMap<MessageBlock>((block) => {
     if (block.kind !== "text") return [block];
-    const text = withoutStraySentinels(block.text);
+    const blockStart = offset;
+    offset += block.text.length;
+    const text = block.text.slice(Math.max(0, start - blockStart), Math.max(0, end - blockStart));
     if (text === block.text) return [block];
-    changed = true;
-    return text.trim() ? [{ ...block, text }] : [];
+    return text ? [{ ...block, text }] : [];
   });
-  return changed ? { assembled: cleanedAssembled, blocks: cleanedBlocks } : { assembled, blocks };
+  return { assembled: cleanedAssembled, blocks: cleanedBlocks };
 }

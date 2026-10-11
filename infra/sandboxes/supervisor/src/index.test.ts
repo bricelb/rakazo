@@ -26,6 +26,7 @@ import {
   containerActionStep,
   containerActionSteps,
   createDockerStreamDemuxer,
+  currentComputerScreens,
   DOCKER_BROWSER_ALIASES,
   demuxDockerStream,
   ensureScreenCommand,
@@ -725,6 +726,39 @@ describe("sandbox supervisor input containment", () => {
     for (let index = 0; index < 8; index += 1) {
       expect(nextScreenIndex(fresh, `bot-fresh-${index}`)).toBe(index);
     }
+  });
+
+  it("drops a screen registry recorded before the container restarted", () => {
+    const registry = new Map<string, Map<string, ScreenAssignment>>();
+    const boots = new Map<string, string>();
+    const containerId = "container-1";
+    const assigned = new Map<string, ScreenAssignment>();
+    registry.set(containerId, assigned);
+    boots.set(containerId, "2026-10-11T18:00:00.000Z");
+    expect(nextScreenIndex(assigned, "writer")).toBe(0);
+    // The container died mid-release (e.g. OOM kill): the slot is stuck releasing.
+    expect(releaseAssignedScreen(assigned, "writer")).toBe(0);
+    expect(() => nextScreenIndex(assigned, "writer")).toThrow(/still being released/);
+
+    expect(currentComputerScreens(registry, boots, containerId, "2026-10-11T18:00:00.000Z")).toBe(
+      assigned,
+    );
+    expect(currentComputerScreens(registry, boots, containerId, undefined)).toBe(assigned);
+
+    expect(
+      currentComputerScreens(registry, boots, containerId, "2026-10-11T18:19:21.000Z"),
+    ).toBeUndefined();
+    expect(registry.has(containerId)).toBe(false);
+    expect(boots.has(containerId)).toBe(false);
+  });
+
+  it("keeps a registry whose boot was never recorded", () => {
+    const registry = new Map<string, Map<string, ScreenAssignment>>();
+    const assigned = new Map<string, ScreenAssignment>();
+    registry.set("container-1", assigned);
+    expect(
+      currentComputerScreens(registry, new Map(), "container-1", "2026-10-11T18:19:21.000Z"),
+    ).toBe(assigned);
   });
 
   it("does not release a screen reclaimed by a newer execution fence", () => {

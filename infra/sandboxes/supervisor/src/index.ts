@@ -64,6 +64,7 @@ import {
   computerControlTimeoutMs,
   containerActionSteps,
   createDockerStreamDemuxer,
+  currentComputerScreens,
   demuxDockerStream,
   ensureScreenCommand,
   hasComputerIdentity,
@@ -110,6 +111,8 @@ const teamScreenLimit = resolveTeamScreenLimit();
 // IPs, so computer control must use a published loopback port instead.
 const controlViaLoopback = process.env.SANDBOX_CONTROL_VIA_LOOPBACK === "true";
 const computerScreens = new Map<string, Map<string, ScreenAssignment>>();
+// Container start time each screen registry was built under; see currentComputerScreens.
+const computerScreenBoots = new Map<string, string>();
 
 export const MAX_SUPERVISOR_REQUEST_BYTES = 1024 * 1024;
 export const MAX_SUPERVISOR_FILE_REQUEST_BYTES = 16 * 1024 * 1024 + 64 * 1024;
@@ -868,7 +871,7 @@ app.delete("/computers/:id/screen", async (c) => {
   let containerFound = false;
   try {
     const id = c.req.param("id");
-    const { container } = await managedContainer(
+    const { container, info } = await managedContainer(
       id,
       c.req.header("x-rakazo-bot-id"),
       c.req.header("x-rakazo-space-id"),
@@ -878,7 +881,12 @@ app.delete("/computers/:id/screen", async (c) => {
     const cancelRunWork = c.req.header("x-rakazo-cancel-run-work") === "1";
     const screenLeaseId = c.req.header("x-rakazo-screen-lease-id");
     await withComputerScreenLock(id, async () => {
-      const assigned = computerScreens.get(id);
+      const assigned = currentComputerScreens(
+        computerScreens,
+        computerScreenBoots,
+        id,
+        info.State?.StartedAt,
+      );
       const index = assigned ? releaseAssignedScreen(assigned, screenId, screenLeaseId) : undefined;
       const stop = screenReleaseStopCommand(index, {
         hasRegistry: Boolean(assigned),
@@ -1158,7 +1166,12 @@ async function ensureManagedScreen(
   screenId: string | undefined,
   screenLeaseId: string | undefined,
 ) {
-  let assigned = computerScreens.get(id);
+  let assigned = currentComputerScreens(
+    computerScreens,
+    computerScreenBoots,
+    id,
+    info.State?.StartedAt,
+  );
   if (!assigned) {
     const reset = await runContainerCommand(container, [
       "bash",
@@ -1168,6 +1181,7 @@ async function ensureManagedScreen(
     if (reset.code !== 0) throw new Error(reset.stderr || "computer screens failed to reset");
     assigned = new Map();
     computerScreens.set(id, assigned);
+    if (info.State?.StartedAt) computerScreenBoots.set(id, info.State.StartedAt);
   }
   const screenKey = screenId || botId || id;
   const index = nextScreenIndex(assigned, screenKey, screenLeaseId, teamScreenLimit);

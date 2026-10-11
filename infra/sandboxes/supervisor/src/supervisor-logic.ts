@@ -280,6 +280,25 @@ export function clearComputerScreenRegistry(
   registry.delete(containerId);
 }
 
+/** Screen processes do not survive a container restart (crash, OOM kill, daemon restart).
+ * A registry recorded under an earlier boot describes processes that no longer exist, and
+ * a slot it left "releasing" would otherwise refuse every later screen and release request. */
+export function currentComputerScreens(
+  registry: Map<string, Map<string, ScreenAssignment>>,
+  boots: Map<string, string>,
+  containerId: string,
+  startedAt: string | undefined,
+): Map<string, ScreenAssignment> | undefined {
+  const assigned = registry.get(containerId);
+  const recordedBoot = boots.get(containerId);
+  if (assigned && startedAt && recordedBoot && recordedBoot !== startedAt) {
+    registry.delete(containerId);
+    boots.delete(containerId);
+    return undefined;
+  }
+  return assigned;
+}
+
 /** Choose the stop command for DELETE /screen cancel/release.
  * Callers must hold the per-computer screen lock across this decision and any stop. */
 export function screenReleaseStopCommand(

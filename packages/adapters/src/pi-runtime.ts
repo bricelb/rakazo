@@ -2015,7 +2015,7 @@ export function jsonField(spec: unknown): ReturnType<typeof Type.String> {
   return Type.String(options);
 }
 
-function serializeToolResult(
+export function serializeToolResult(
   result: unknown,
   strategy: AgentRunRequest["contextStrategy"],
   name: string,
@@ -2024,7 +2024,9 @@ function serializeToolResult(
   try {
     const text = JSON.stringify(result);
     if (!text) return "ok";
-    if (text.length <= 12_000) return text;
+    // A skill read is the source text the agent rewrites with skill_update; skill-tools.ts already
+    // bounds it, so clipping here would make large skills impossible to edit safely.
+    if (text.length <= 12_000 || name === "skill_read") return text;
     return (strategy ?? DEFAULT_CONTEXT_STRATEGY) === "current"
       ? clipToolResultText(text)
       : shortenToolResultText(text, 12_000, { name, arguments: args });

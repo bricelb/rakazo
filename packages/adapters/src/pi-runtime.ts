@@ -66,7 +66,7 @@ import type { PiSessionHandle, PiSessionRecorder } from "./pi-session.js";
 import { PiJsonlSessionRecorder } from "./pi-session.js";
 import { observedPiStream } from "./pi-usage.js";
 import type { RuntimeContextDecision } from "./runtime-context.js";
-import { createRuntimeContextPolicy } from "./runtime-context.js";
+import { createRuntimeContextPolicy, VERBATIM_TOOL_RESULTS } from "./runtime-context.js";
 import type { FinishedShellCommand } from "./shell-command-stream.js";
 import { deliverFinishedShells } from "./shell-command-stream.js";
 import { textContentArg } from "./tool-text.js";
@@ -2024,9 +2024,8 @@ export function serializeToolResult(
   try {
     const text = JSON.stringify(result);
     if (!text) return "ok";
-    // A skill read is the source text the agent rewrites with skill_update; skill-tools.ts already
-    // bounds it, so clipping here would make large skills impossible to edit safely.
-    if (text.length <= 12_000 || name === "skill_read") return text;
+    // skill-tools.ts already bounds skill content; the context budget selector may still shorten it.
+    if (text.length <= 12_000 || VERBATIM_TOOL_RESULTS.has(name)) return text;
     return (strategy ?? DEFAULT_CONTEXT_STRATEGY) === "current"
       ? clipToolResultText(text)
       : shortenToolResultText(text, 12_000, { name, arguments: args });

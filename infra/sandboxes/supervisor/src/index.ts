@@ -1173,7 +1173,7 @@ async function ensureManagedScreen(
     const screen = await ensureManagedScreenAttempt(id, container, botId, screenId, screenLeaseId);
     const info = await container.inspect();
     if (info.State?.StartedAt === screen.info.State?.StartedAt) {
-      // Publish the boot marker only after setup is confirmed against the same boot.
+      // Confirm the pending boot marker only after setup completes against the same boot.
       if (info.State?.StartedAt) computerScreenBoots.set(id, info.State.StartedAt);
       return { ...screen, info };
     }
@@ -1206,6 +1206,8 @@ async function ensureManagedScreenAttempt(
     if (reset.code !== 0) throw new Error(reset.stderr || "computer screens failed to reset");
     assigned = new Map();
     computerScreens.set(id, assigned);
+    // Remember the inspected boot even if setup or teardown fails before confirmation.
+    if (info.State?.StartedAt) computerScreenBoots.set(id, info.State.StartedAt);
   }
   const screenKey = screenId || botId || id;
   const index = nextScreenIndex(assigned, screenKey, screenLeaseId, teamScreenLimit);

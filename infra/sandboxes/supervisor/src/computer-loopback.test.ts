@@ -1155,6 +1155,73 @@ describe("screen release status", () => {
 });
 
 describe("screen registry across run boundaries", () => {
+  it("discards a first failed setup left releasing when the container restarts", async () => {
+    const logic = await import("./supervisor-logic.js");
+    const currentScreens = vi.spyOn(logic, "currentComputerScreens");
+    const { supervisorApp } = await import("./index.js");
+    let boot = "boot-1";
+    let running = true;
+    let failSetup = true;
+    const commands: string[] = [];
+    const container = {
+      inspect: vi.fn(async () => ({
+        Config: {
+          Labels: { "rakazo.managed": "true", "rakazo.botId": "bot", "rakazo.spaceId": "space" },
+        },
+        State: { Running: running, StartedAt: boot },
+        HostConfig: { NetworkMode: computerNetworkNameFor("bot") },
+        NetworkSettings: {
+          Ports: { "6080/tcp": [{ HostIp: "127.0.0.1", HostPort: screenPort }] },
+        },
+      })),
+      exec: vi.fn(async ({ Cmd }: { Cmd: string[] }) => {
+        const command = Cmd.join(" ");
+        commands.push(command);
+        if (!running) throw new Error("container stopped");
+        let code = 0;
+        if (failSetup && command.includes("computer browser CDP not ready")) {
+          failSetup = false;
+          running = false;
+          code = 1;
+        }
+        return { start: async () => Readable.from([]), inspect: async () => ({ ExitCode: code }) };
+      }),
+    };
+    mocks.docker.getContainer.mockReturnValue(container);
+    const view = () =>
+      supervisorApp.request("/computers/failed-first-setup/screen-mode", {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${resolveSupervisorToken(process.env)}`,
+          "content-type": "application/json",
+          "x-rakazo-bot-id": "bot",
+          "x-rakazo-space-id": "space",
+          "x-rakazo-screen-id": "writer",
+        },
+        body: JSON.stringify({ interactive: false, revokeControl: false }),
+      });
+    const failed = await view();
+    expect(failed.status).toBe(400);
+    expect(await failed.json()).toEqual({ error: "container stopped" });
+    const [registry, boots] = currentScreens.mock.calls.at(-1)!;
+    const stale = registry.get("failed-first-setup");
+    expect(stale?.get("writer")?.releasing).toBe(true);
+
+    boot = "boot-2";
+    running = true;
+    expect((await view()).status).toBe(200);
+    expect(registry.get("failed-first-setup")).not.toBe(stale);
+    expect(registry.get("failed-first-setup")?.get("writer")).toMatchObject({ index: 0 });
+    expect(boots.get("failed-first-setup")).toBe("boot-2");
+    expect(
+      commands.filter((command) => command.includes("for marker in /tmp/rakazo/browser-profile-*")),
+    ).toHaveLength(2);
+    expect((await view()).status).toBe(200);
+    expect(
+      commands.filter((command) => command.includes("for marker in /tmp/rakazo/browser-profile-*")),
+    ).toHaveLength(2);
+  });
+
   it.each([
     { phase: "reset", continuous: false },
     { phase: "reset", continuous: true },
@@ -1182,12 +1249,14 @@ describe("screen registry across run boundaries", () => {
           },
         })),
         exec: vi.fn(async ({ Cmd }: { Cmd: string[] }) => {
-          // An unverified claim must not publish a boot marker, even during a retry.
+          const command = Cmd.join(" ");
+          // Reset starts without a registry; ensure has a pending marker for its inspected boot.
           if (claiming) {
             const [, boots] = currentScreens.mock.calls.at(-1)!;
-            expect(boots.has("mid-claim")).toBe(false);
+            expect(boots.has("mid-claim")).toBe(
+              !command.includes("for marker in /tmp/rakazo/browser-profile-*"),
+            );
           }
-          const command = Cmd.join(" ");
           commands.push(command);
           const restartsDuringCommand =
             phase === "reset"

@@ -14,6 +14,7 @@ import {
   supervisorRequestBodyLimit,
   waitForScreenReady,
 } from "./index.js";
+import type { ScreenAssignment } from "./supervisor-logic.js";
 import {
   assertRequestIdentity,
   attemptComputerControl,
@@ -40,7 +41,6 @@ import {
   preferComputerControl,
   releaseAssignedScreen,
   resetManagedScreensCommand,
-  type ScreenAssignment,
   sandboxCommandTimedOut,
   sandboxTimeoutCommand,
   screenReleaseStopCommand,
@@ -718,8 +718,17 @@ describe("sandbox supervisor input containment", () => {
       /cannot allocate another screen/,
     );
 
-    clearComputerScreenRegistry(registry, containerId);
+    const boots = new Map([
+      [containerId, "boot-1"],
+      ["other-container", "boot-2"],
+    ]);
+    clearComputerScreenRegistry(registry, boots, containerId);
     expect(registry.has(containerId)).toBe(false);
+    expect(boots.has(containerId)).toBe(false);
+    expect(boots.get("other-container")).toBe("boot-2");
+    // Cleanup also removes a marker if the registry is already absent.
+    clearComputerScreenRegistry(registry, boots, "other-container");
+    expect(boots.size).toBe(0);
 
     const fresh = new Map<string, ScreenAssignment>();
     registry.set(containerId, fresh);

@@ -1155,6 +1155,107 @@ describe("screen release status", () => {
 });
 
 describe("screen registry across run boundaries", () => {
+  it.each(["POST", "DELETE"])(
+    "re-inspects the boot after a queued %s screen request acquires the lock",
+    async (method) => {
+      const { supervisorApp } = await import("./index.js");
+      const commands: string[] = [];
+      let startedAt = "boot-1";
+      let blockCommand = false;
+      let signalBlocked!: () => void;
+      const blocked = new Promise<void>((resolve) => {
+        signalBlocked = resolve;
+      });
+      let unblock!: () => void;
+      const gate = new Promise<void>((resolve) => {
+        unblock = resolve;
+      });
+      let signalQueued!: () => void;
+      const queuedInspection = new Promise<void>((resolve) => {
+        signalQueued = resolve;
+      });
+      let waitingForInspection = false;
+      const container = {
+        inspect: vi.fn(async () => {
+          if (waitingForInspection) signalQueued();
+          return {
+            Config: {
+              Labels: {
+                "rakazo.managed": "true",
+                "rakazo.botId": "bot",
+                "rakazo.spaceId": "space",
+              },
+            },
+            HostConfig: { NetworkMode: computerNetworkNameFor("bot") },
+            State: { Running: true, StartedAt: startedAt },
+            NetworkSettings: {
+              Ports: { "6080/tcp": [{ HostIp: "127.0.0.1", HostPort: screenPort }] },
+            },
+          };
+        }),
+        exec: vi.fn(async ({ Cmd }: { Cmd: string[] }) => {
+          commands.push(Cmd.join(" "));
+          if (blockCommand) {
+            blockCommand = false;
+            signalBlocked();
+            await gate;
+          }
+          return { start: async () => Readable.from([]), inspect: async () => ({ ExitCode: 0 }) };
+        }),
+      };
+      mocks.docker.getContainer.mockReturnValue(container);
+      const headers = {
+        authorization: `Bearer ${resolveSupervisorToken(process.env)}`,
+        "content-type": "application/json",
+        "x-rakazo-bot-id": "bot",
+        "x-rakazo-space-id": "space",
+        "x-rakazo-screen-id": "writer",
+      };
+      const view = () =>
+        supervisorApp.request("/computers/restarted/screen-mode", {
+          method: "POST",
+          headers,
+          body: JSON.stringify({ interactive: false, revokeControl: false }),
+        });
+      const resets = () =>
+        commands.filter((command) =>
+          command.includes("for marker in /tmp/rakazo/browser-profile-*"),
+        ).length;
+      expect((await view()).status).toBe(200);
+      blockCommand = true;
+      const holder = view();
+      await blocked;
+      waitingForInspection = true;
+      const queued =
+        method === "POST"
+          ? view()
+          : supervisorApp.request("/computers/restarted/screen", { method: "DELETE", headers });
+      await queuedInspection;
+      startedAt = "boot-2";
+      const commandsBeforeRelease = commands.length;
+      unblock();
+      expect((await holder).status).toBe(200);
+      const response = await queued;
+      expect(response.status).toBe(200);
+      if (method === "DELETE") {
+        // The old assignment must not tear down a screen from the new boot.
+        expect(commands).toHaveLength(commandsBeforeRelease);
+      } else {
+        expect(resets()).toBe(2);
+        const screen = await response.json();
+        const next = await view();
+        expect(next.status).toBe(200);
+        // Reusing the registry preserves the screen's view token as well as its desktop.
+        expect(await next.json()).toEqual(screen);
+      }
+      expect((await view()).status).toBe(200);
+      expect(resets()).toBe(2);
+      // A screen created in the new boot keeps its marker on later requests.
+      expect((await view()).status).toBe(200);
+      expect(resets()).toBe(2);
+    },
+  );
+
   it("does not reset the desktop when a screen is requested after the last one is released", async () => {
     const { supervisorApp } = await import("./index.js");
     const commands: string[] = [];

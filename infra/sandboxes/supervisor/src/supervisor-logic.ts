@@ -273,11 +273,14 @@ export interface ScreenAssignment {
   viewToken?: string;
 }
 
+/** Forget screen assignments and their boot marker together on every cleanup path. */
 export function clearComputerScreenRegistry(
   registry: Map<string, Map<string, ScreenAssignment>>,
+  boots: Map<string, string>,
   containerId: string,
 ) {
   registry.delete(containerId);
+  boots.delete(containerId);
 }
 
 /** Screen processes do not survive a container restart (crash, OOM kill, daemon restart).
@@ -292,8 +295,7 @@ export function currentComputerScreens(
   const assigned = registry.get(containerId);
   const recordedBoot = boots.get(containerId);
   if (assigned && startedAt && recordedBoot && recordedBoot !== startedAt) {
-    registry.delete(containerId);
-    boots.delete(containerId);
+    clearComputerScreenRegistry(registry, boots, containerId);
     return undefined;
   }
   return assigned;

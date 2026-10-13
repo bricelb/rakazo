@@ -753,7 +753,7 @@ app.post("/computers/:id/screen-mode", async (c) => {
     const screenLeaseId = c.req.header("x-rakazo-screen-lease-id");
     const { container, info } = await managedContainer(id, botId, spaceId);
     const { layout, viewToken } = await withComputerScreenLock(id, async () => {
-      const screen = await ensureManagedScreen(id, container, info, botId, screenId, screenLeaseId);
+      const screen = await ensureManagedScreen(id, container, botId, screenId, screenLeaseId);
       if (body.interactive || body.revokeControl !== false) {
         await setInteractiveScreen(container, body.interactive, body.controlToken, screen.layout);
       }
@@ -794,7 +794,6 @@ app.post("/computers/:id/terminal", async (c) => {
       const screen = await ensureManagedScreen(
         id,
         container,
-        info,
         botId,
         c.req.header("x-rakazo-screen-id"),
         c.req.header("x-rakazo-screen-lease-id"),
@@ -871,7 +870,7 @@ app.delete("/computers/:id/screen", async (c) => {
   let containerFound = false;
   try {
     const id = c.req.param("id");
-    const { container, info } = await managedContainer(
+    const { container } = await managedContainer(
       id,
       c.req.header("x-rakazo-bot-id"),
       c.req.header("x-rakazo-space-id"),
@@ -881,6 +880,7 @@ app.delete("/computers/:id/screen", async (c) => {
     const cancelRunWork = c.req.header("x-rakazo-cancel-run-work") === "1";
     const screenLeaseId = c.req.header("x-rakazo-screen-lease-id");
     await withComputerScreenLock(id, async () => {
+      const info = await container.inspect();
       const assigned = currentComputerScreens(
         computerScreens,
         computerScreenBoots,
@@ -943,10 +943,10 @@ app.post("/computers/:id/stop", async (c) => {
         } finally {
           // Failed profiles remain on the durable home for recovery after restart.
           await container.stop();
-          clearComputerScreenRegistry(computerScreens, id);
+          clearComputerScreenRegistry(computerScreens, computerScreenBoots, id);
         }
       }
-      clearComputerScreenRegistry(computerScreens, id);
+      clearComputerScreenRegistry(computerScreens, computerScreenBoots, id);
     });
     if (botId && screenNetworkMode !== "internal") {
       await reclaimComputerNetwork(container, botId).catch((error) => {
@@ -972,7 +972,7 @@ app.delete("/computers/:id", async (c) => {
       const { container } = await managedContainer(id, botId, c.req.header("x-rakazo-space-id"));
       await withComputerScreenLock(id, async () => {
         await container.remove({ force: true }).catch(() => undefined);
-        clearComputerScreenRegistry(computerScreens, id);
+        clearComputerScreenRegistry(computerScreens, computerScreenBoots, id);
       });
       if (screenNetworkMode !== "internal") {
         await removeBotNetwork(botId);
@@ -1152,20 +1152,21 @@ async function managedScreen(
   screenId: string | undefined,
   screenLeaseId: string | undefined,
 ) {
-  const { container, info } = await managedContainer(id, botId, spaceId);
+  const { container } = await managedContainer(id, botId, spaceId);
   return withComputerScreenLock(id, () =>
-    ensureManagedScreen(id, container, info, botId, screenId, screenLeaseId),
+    ensureManagedScreen(id, container, botId, screenId, screenLeaseId),
   );
 }
 
 async function ensureManagedScreen(
   id: string,
   container: Docker.Container,
-  info: Docker.ContainerInspectInfo,
   botId: string | undefined,
   screenId: string | undefined,
   screenLeaseId: string | undefined,
 ) {
+  // Callers hold the screen lock: an inspection before waiting can describe an older boot.
+  const info = await container.inspect();
   let assigned = currentComputerScreens(
     computerScreens,
     computerScreenBoots,
@@ -1204,7 +1205,7 @@ async function ensureManagedScreen(
     await teardownReleasedScreen(assigned, screenKey, index, () =>
       runContainerCommand(container, ["bash", "-c", stopExtraScreenCommand(index, screenKey)]),
     );
-    if (assigned.size === 0) computerScreens.delete(id);
+    if (assigned.size === 0) clearComputerScreenRegistry(computerScreens, computerScreenBoots, id);
     const detail = [ensured.stderr, browserLog.stdout].filter(Boolean).join("\n").trim();
     throw new Error(detail || `computer screen ${layout.display} failed to start`);
   }

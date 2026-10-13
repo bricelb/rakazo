@@ -294,7 +294,10 @@ app.post("/computers", async (c) => {
         let container: Docker.Container | undefined;
         try {
           if (existing) {
-            await existing.remove({ force: true }).catch(() => undefined);
+            await withComputerScreenLock(existing.id, async () => {
+              await existing.remove({ force: true }).catch(() => undefined);
+              clearComputerScreenRegistry(computerScreens, computerScreenBoots, existing.id);
+            });
           }
           container = await docker.createContainer(
             containerCreateOptions({
@@ -1159,6 +1162,23 @@ async function managedScreen(
 }
 
 async function ensureManagedScreen(
+  id: string,
+  container: Docker.Container,
+  botId: string | undefined,
+  screenId: string | undefined,
+  screenLeaseId: string | undefined,
+) {
+  // Docker can restart independently of the supervisor's screen lock.
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const screen = await ensureManagedScreenAttempt(id, container, botId, screenId, screenLeaseId);
+    const info = await container.inspect();
+    if (info.State?.StartedAt === screen.info.State?.StartedAt) return { ...screen, info };
+    clearComputerScreenRegistry(computerScreens, computerScreenBoots, id);
+  }
+  throw new Error("computer restarted during screen setup");
+}
+
+async function ensureManagedScreenAttempt(
   id: string,
   container: Docker.Container,
   botId: string | undefined,

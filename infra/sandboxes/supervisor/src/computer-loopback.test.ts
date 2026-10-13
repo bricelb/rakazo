@@ -1155,12 +1155,20 @@ describe("screen release status", () => {
 });
 
 describe("screen registry across run boundaries", () => {
-  it.each([false, true])(
-    "retries setup across restarts with a bounded limit (continuous: %s)",
-    async (continuous) => {
+  it.each([
+    { phase: "reset", continuous: false },
+    { phase: "reset", continuous: true },
+    { phase: "ensure", continuous: false },
+    { phase: "ensure", continuous: true },
+  ])(
+    "retries setup when the boot changes during $phase (continuous: $continuous)",
+    async ({ phase, continuous }) => {
+      const logic = await import("./supervisor-logic.js");
+      const currentScreens = vi.spyOn(logic, "currentComputerScreens");
       const { supervisorApp } = await import("./index.js");
       let boot = 1;
       let restart = true;
+      let claiming = true;
       const commands: string[] = [];
       const container = {
         inspect: vi.fn(async () => ({
@@ -1174,9 +1182,18 @@ describe("screen registry across run boundaries", () => {
           },
         })),
         exec: vi.fn(async ({ Cmd }: { Cmd: string[] }) => {
+          // An unverified claim must not publish a boot marker, even during a retry.
+          if (claiming) {
+            const [, boots] = currentScreens.mock.calls.at(-1)!;
+            expect(boots.has("mid-claim")).toBe(false);
+          }
           const command = Cmd.join(" ");
           commands.push(command);
-          if (command.includes("for marker in /tmp/rakazo/browser-profile-*") && restart) {
+          const restartsDuringCommand =
+            phase === "reset"
+              ? command.includes("for marker in /tmp/rakazo/browser-profile-*")
+              : command.includes("computer browser CDP not ready");
+          if (restartsDuringCommand && restart) {
             boot += 1;
             restart = continuous;
           }
@@ -1197,6 +1214,7 @@ describe("screen registry across run boundaries", () => {
           body: JSON.stringify({ interactive: false, revokeControl: false }),
         });
       const response = await view();
+      claiming = false;
       expect(response.status).toBe(continuous ? 400 : 200);
       expect(
         commands.filter((command) =>
@@ -1223,6 +1241,8 @@ describe("screen registry across run boundaries", () => {
   );
 
   it("waits for screen setup before replacing a container and clears its metadata", async () => {
+    const logic = await import("./supervisor-logic.js");
+    const clearRegistry = vi.spyOn(logic, "clearComputerScreenRegistry");
     const { supervisorApp } = await import("./index.js");
     const commands: string[] = [];
     let block = false;
@@ -1296,6 +1316,11 @@ describe("screen registry across run boundaries", () => {
     expect((await claim).status).toBe(200);
     expect((await replacement).status).toBe(200);
     expect(existing.remove).toHaveBeenCalledWith({ force: true });
+    const cleanup = clearRegistry.mock.calls.find(([, , id]) => id === existing.id);
+    expect(cleanup).toBeDefined();
+    const [registry, boots] = cleanup!;
+    expect(registry.has(existing.id)).toBe(false);
+    expect(boots.has(existing.id)).toBe(false);
     // Let the mock answer for the old ID to observe whether its registry was forgotten.
     const resets = commands.filter((command) =>
       command.includes("for marker in /tmp/rakazo/browser-profile-*"),

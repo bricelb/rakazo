@@ -51,10 +51,14 @@ describe("memory store contract shape", () => {
     const deleteMany = vi.fn().mockResolvedValue({ count: 1 });
     const store = new MarkdownMemoryStore({ memoryDocument: { deleteMany } } as never);
     await expect(
-      store.remove({ scope: "bot", botId: "bot-1", path: "projects/retired.md" }, context),
+      store.remove(
+        { id: "memory-9", scope: "bot", botId: "bot-1", path: "projects/retired.md" },
+        context,
+      ),
     ).resolves.toEqual({ removed: true });
     expect(deleteMany).toHaveBeenCalledWith({
       where: {
+        id: "memory-9",
         spaceId: "workspace-1",
         userId: "user-1",
         scope: "bot",

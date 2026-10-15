@@ -4203,7 +4203,7 @@ describe("memory documents", () => {
       where: { id: "doc-1", spaceId: "space-1", userId: "user-1" },
     });
     expect(memory.remove).toHaveBeenCalledWith(
-      { scope: "bot", botId: "bot-1", path: "projects/retired.md" },
+      { id: "doc-1", scope: "bot", botId: "bot-1", path: "projects/retired.md" },
       expect.objectContaining({ spaceId: "space-1", userId: "user-1" }),
     );
   });

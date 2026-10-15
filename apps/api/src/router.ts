@@ -3249,7 +3249,12 @@ export function createRouter(deps: RouterDeps) {
           });
         }
         await deps.memory.remove(
-          { scope: doc.scope as "bot" | "user", botId: doc.botId ?? undefined, path: doc.path },
+          {
+            id: doc.id,
+            scope: doc.scope as "bot" | "user",
+            botId: doc.botId ?? undefined,
+            path: doc.path,
+          },
           {
             operationId: "mem",
             traceId: "mem",

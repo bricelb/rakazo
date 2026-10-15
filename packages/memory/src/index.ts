@@ -127,6 +127,7 @@ export class MarkdownMemoryStore implements MemoryStore {
     // Revisions cascade with the document row.
     const { count } = await this.prisma.memoryDocument.deleteMany({
       where: {
+        ...(request.id ? { id: request.id } : {}),
         spaceId: context.spaceId,
         userId: context.userId,
         scope: request.scope,

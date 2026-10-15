@@ -1,10 +1,6 @@
 import { Trans, useLingui } from "@lingui/react/macro";
-import {
-  type AgentSkill,
-  type AgentSkillCatalogEntry,
-  isDeletableMemoryDocument,
-  type MemoryDocument,
-} from "@rakazo/contracts";
+import type { AgentSkill, AgentSkillCatalogEntry, MemoryDocument } from "@rakazo/contracts";
+import { isDeletableMemoryDocument } from "@rakazo/contracts";
 import {
   Badge,
   Button,

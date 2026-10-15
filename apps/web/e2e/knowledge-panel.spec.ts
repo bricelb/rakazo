@@ -89,7 +89,7 @@ test("memory and skills are readable and editable in the app", async ({ page }, 
   expect(exported).not.toContain("# Chief");
 
   // Any shared document but MEMORY.md can be deleted after a confirmation.
-  await memoryRow.click();
+  // MEMORY.md editor is already open after exportMarkdown; do not toggle it closed.
   await expect(spaceDocs.getByRole("button", { name: "Delete", exact: true })).toHaveCount(0);
   await spaceDocs.getByRole("button", { name: "Cancel", exact: true }).click();
   const retiredRow = spaceDocs.getByRole("button", { name: new RegExp(retiredPath) });

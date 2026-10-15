@@ -8,6 +8,9 @@ const PROVIDER_LABELS: Record<string, string> = {
 
 /** User-facing name of a messaging provider (falls back to the raw id). */
 export function providerLabel(provider: string): string {
+  // Extra named Telegram bots mount as "telegram-<name>".
+  const telegramBot = /^telegram-(.+)$/.exec(provider)?.[1];
+  if (telegramBot) return `Telegram (${telegramBot})`;
   return PROVIDER_LABELS[provider] ?? provider;
 }
 

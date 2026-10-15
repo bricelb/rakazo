@@ -3,6 +3,8 @@ import {
   resolveDeploymentModel,
   resolveSandboxProvider,
   secretStoreOptionsFromEnv,
+  type TelegramBotCredentials,
+  telegramBotsFromEnv,
 } from "@rakazo/adapters";
 import type { OidcConfig } from "@rakazo/auth";
 import {
@@ -79,6 +81,8 @@ export interface AppEnv {
   whatsappVerifyToken: string | undefined;
   telegramBotToken: string | undefined;
   telegramWebhookSecret: string | undefined;
+  /** Extra named Telegram bots (TELEGRAM_BOT_TOKEN_<NAME>), e.g. one per space. */
+  telegramBots?: TelegramBotCredentials[];
   larkAppId: string | undefined;
   larkAppSecret: string | undefined;
   larkVerificationToken: string | undefined;
@@ -218,6 +222,7 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
     whatsappVerifyToken: optional(source.WHATSAPP_VERIFY_TOKEN),
     telegramBotToken: optional(source.TELEGRAM_BOT_TOKEN),
     telegramWebhookSecret: optional(source.TELEGRAM_WEBHOOK_SECRET_TOKEN),
+    telegramBots: telegramBotsFromEnv(source),
     larkAppId: optional(source.LARK_APP_ID),
     larkAppSecret: optional(source.LARK_APP_SECRET),
     larkVerificationToken: optional(source.LARK_VERIFICATION_TOKEN),

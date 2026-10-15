@@ -1,5 +1,5 @@
 import { Trans, useLingui } from "@lingui/react/macro";
-import type { Bot, BotSection } from "@rakazo/contracts";
+import { type Bot, type BotSection, GROUP_MEMBER_MAX, GROUP_MEMBER_MIN } from "@rakazo/contracts";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -201,7 +201,10 @@ export function PickerInfoDialog({
           </DialogTitle>
           <DialogDescription>
             {topic === "group" ? (
-              <Trans>Shared chat with 2-6 bots. They all reply in the same thread.</Trans>
+              <Trans>
+                Shared chat with {GROUP_MEMBER_MIN}-{GROUP_MEMBER_MAX} bots. They all reply in the
+                same thread.
+              </Trans>
             ) : (
               <Trans>Private workspace with its own bots and groups.</Trans>
             )}

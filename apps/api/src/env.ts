@@ -1,9 +1,9 @@
+import type { TelegramBotCredentials } from "@rakazo/adapters";
 import {
   resolveCloudAgentProvider,
   resolveDeploymentModel,
   resolveSandboxProvider,
   secretStoreOptionsFromEnv,
-  type TelegramBotCredentials,
   telegramBotsFromEnv,
 } from "@rakazo/adapters";
 import type { OidcConfig } from "@rakazo/auth";

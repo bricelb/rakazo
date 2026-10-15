@@ -2,6 +2,7 @@ import { createSlackAdapter } from "@chat-adapter/slack";
 import { createTelegramAdapter } from "@chat-adapter/telegram";
 import { createWhatsAppAdapter } from "@chat-adapter/whatsapp";
 import type { MessagingInboundMessage, MessagingOutboundStatus } from "@rakazo/adapter-kit";
+import { getLogger } from "@rakazo/logging";
 import type { Adapter } from "chat";
 import { createLarkAdapter, Domain } from "chat-adapter-lark";
 import { createSendblueAdapter } from "chat-adapter-sendblue";
@@ -91,7 +92,23 @@ export function telegramBotsFromEnv(
     if (!botToken || !webhookSecret) continue;
     bots.push({ name: suffix.toLowerCase(), botToken, webhookSecret });
   }
-  return bots.sort((a, b) => a.name.localeCompare(b.name));
+  bots.sort((a, b) => a.name.localeCompare(b.name));
+  // Telegram allows one getUpdates connection per token, so two pollers on
+  // one token would steal each other's slot and drop messages. The default
+  // bot keeps its token; a repeat is skipped (first name wins) with a warning.
+  const seen = new Set<string>();
+  const defaultToken = env.TELEGRAM_BOT_TOKEN?.trim();
+  if (defaultToken) seen.add(defaultToken);
+  return bots.filter((bot) => {
+    if (!seen.has(bot.botToken)) {
+      seen.add(bot.botToken);
+      return true;
+    }
+    getLogger().warn("skipping Telegram bot that reuses another bot's token", {
+      provider: `telegram-${bot.name}`,
+    });
+    return false;
+  });
 }
 
 /**

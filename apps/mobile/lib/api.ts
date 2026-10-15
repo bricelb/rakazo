@@ -30,6 +30,7 @@ import {
   isServerUnreachable,
   isUnreachableStatus,
   mergeThreadHistory,
+  messagingProviderLabel,
   prependThreadHistoryPage,
   progressMessageId,
   readBoundedJsonResponse,
@@ -1077,23 +1078,7 @@ export function prependMobileMessagePage(
   return prependThreadHistoryPage(prev, page);
 }
 
-const MESSAGING_PROVIDER_LABELS: Record<string, string> = {
-  sendblue: "iMessage",
-  slack: "Slack",
-  whatsapp: "WhatsApp",
-  telegram: "Telegram",
-  lark: "Feishu",
-};
-
-export function messagingProviderLabel(provider: string, transport?: string): string {
-  if (provider === "sendblue" && ["iMessage", "SMS", "RCS"].includes(transport ?? "")) {
-    return transport!;
-  }
-  // Extra named Telegram bots mount as "telegram-<name>".
-  const telegramBot = /^telegram-(.+)$/.exec(provider)?.[1];
-  if (telegramBot) return `Telegram (${telegramBot})`;
-  return MESSAGING_PROVIDER_LABELS[provider] ?? provider;
-}
+export { messagingProviderLabel };
 
 /** The message's text exactly as written, for a view that selects part of it. */
 export function selectableMobileMessageText(message: MobileMessage): string {

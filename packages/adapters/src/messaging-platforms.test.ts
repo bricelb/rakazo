@@ -127,6 +127,21 @@ describe("messagingPlatformsFromEnv", () => {
     ]);
   });
 
+  it("skips a named Telegram bot that reuses the default or another bot's token", () => {
+    expect(
+      telegramBotsFromEnv({
+        TELEGRAM_BOT_TOKEN: "tg-shared",
+        TELEGRAM_WEBHOOK_SECRET_TOKEN: "default-secret",
+        TELEGRAM_BOT_TOKEN_COPY: " tg-shared ",
+        TELEGRAM_WEBHOOK_SECRET_TOKEN_COPY: "copy-secret",
+        TELEGRAM_BOT_TOKEN_ALPHA: "tg-other",
+        TELEGRAM_WEBHOOK_SECRET_TOKEN_ALPHA: "alpha-secret",
+        TELEGRAM_BOT_TOKEN_BETA: "tg-other",
+        TELEGRAM_WEBHOOK_SECRET_TOKEN_BETA: "beta-secret",
+      }),
+    ).toEqual([{ name: "alpha", botToken: "tg-other", webhookSecret: "alpha-secret" }]);
+  });
+
   it("forces Lark into webhook inbound so worker initialize cannot open a long connection", () => {
     const lark = messagingPlatformsFromEnv({
       larkAppId: "cli-fake",

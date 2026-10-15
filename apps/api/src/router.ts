@@ -144,6 +144,7 @@ import {
   ComputerCommandSchema,
   foldComputerCommands,
   IntegrationProviderIdSchema,
+  isDeletableMemoryDocument,
   OPENAI_COMPATIBLE_PROVIDER_ID,
   parseTicketRef,
   usableModelId,
@@ -3232,6 +3233,23 @@ export function createRouter(deps: RouterDeps) {
           revision: updated.revision,
           updatedAt: new Date().toISOString(),
         };
+      }),
+      remove: authed.memory.remove.handler(async ({ context, input }) => {
+        const where = {
+          id: input.documentId,
+          spaceId: context.actor.spaceId,
+          userId: context.actor.userId,
+        };
+        const doc = await deps.prisma.memoryDocument.findFirst({ where });
+        if (!doc) throw new IsolationError();
+        if (!isDeletableMemoryDocument(doc.path)) {
+          throw new ORPCError("BAD_REQUEST", {
+            message: `${doc.path} cannot be deleted; edit its content instead.`,
+          });
+        }
+        // Revisions cascade with the document.
+        await deps.prisma.memoryDocument.deleteMany({ where });
+        return { ok: true as const };
       }),
       exportMarkdown: authed.memory.exportMarkdown.handler(async ({ context, input }) => {
         const docs = await deps.prisma.memoryDocument.findMany({

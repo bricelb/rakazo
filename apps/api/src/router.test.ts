@@ -4173,3 +4173,40 @@ describe("link favicons", () => {
     expect(favicon).not.toHaveBeenCalled();
   });
 });
+
+describe("memory documents", () => {
+  const actor = { userId: "user-1", spaceId: "space-1", email: "user@rakazo.test" };
+
+  function memoryClient(doc: { id: string; path: string } | null) {
+    const memoryDocument = {
+      findFirst: vi.fn(async () => doc),
+      deleteMany: vi.fn(async () => ({ count: doc ? 1 : 0 })),
+    };
+    const deps = {
+      prisma: { memoryDocument },
+      env: { webOrigin: "https://example.test" },
+    } as unknown as RouterDeps;
+    const client = createRouterClient(createRouter(deps), { context: { actor } as never });
+    return { client, memoryDocument };
+  }
+
+  it("deletes a memory document owned by the caller in the current space", async () => {
+    const { client, memoryDocument } = memoryClient({ id: "doc-1", path: "projects/retired.md" });
+    await expect(client.memory.remove({ documentId: "doc-1" })).resolves.toEqual({ ok: true });
+    const scope = { id: "doc-1", spaceId: "space-1", userId: "user-1" };
+    expect(memoryDocument.findFirst).toHaveBeenCalledWith({ where: scope });
+    expect(memoryDocument.deleteMany).toHaveBeenCalledWith({ where: scope });
+  });
+
+  it("keeps MEMORY.md and does not reach another user's document", async () => {
+    const index = memoryClient({ id: "doc-1", path: "MEMORY.md" });
+    await expect(index.client.memory.remove({ documentId: "doc-1" })).rejects.toMatchObject({
+      code: "BAD_REQUEST",
+    });
+    expect(index.memoryDocument.deleteMany).not.toHaveBeenCalled();
+
+    const foreign = memoryClient(null);
+    await expect(foreign.client.memory.remove({ documentId: "doc-2" })).rejects.toBeTruthy();
+    expect(foreign.memoryDocument.deleteMany).not.toHaveBeenCalled();
+  });
+});

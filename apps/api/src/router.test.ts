@@ -4177,36 +4177,46 @@ describe("link favicons", () => {
 describe("memory documents", () => {
   const actor = { userId: "user-1", spaceId: "space-1", email: "user@rakazo.test" };
 
-  function memoryClient(doc: { id: string; path: string } | null) {
-    const memoryDocument = {
-      findFirst: vi.fn(async () => doc),
-      deleteMany: vi.fn(async () => ({ count: doc ? 1 : 0 })),
-    };
+  function memoryClient(
+    doc: { id: string; path: string; scope: string; botId: string | null } | null,
+  ) {
+    const memoryDocument = { findFirst: vi.fn(async () => doc) };
+    const memory = { remove: vi.fn(async () => ({ removed: true })) };
     const deps = {
       prisma: { memoryDocument },
+      memory,
       env: { webOrigin: "https://example.test" },
     } as unknown as RouterDeps;
     const client = createRouterClient(createRouter(deps), { context: { actor } as never });
-    return { client, memoryDocument };
+    return { client, memoryDocument, memory };
   }
 
-  it("deletes a memory document owned by the caller in the current space", async () => {
-    const { client, memoryDocument } = memoryClient({ id: "doc-1", path: "projects/retired.md" });
+  it("deletes a memory document owned by the caller through the memory store", async () => {
+    const { client, memoryDocument, memory } = memoryClient({
+      id: "doc-1",
+      path: "projects/retired.md",
+      scope: "bot",
+      botId: "bot-1",
+    });
     await expect(client.memory.remove({ documentId: "doc-1" })).resolves.toEqual({ ok: true });
-    const scope = { id: "doc-1", spaceId: "space-1", userId: "user-1" };
-    expect(memoryDocument.findFirst).toHaveBeenCalledWith({ where: scope });
-    expect(memoryDocument.deleteMany).toHaveBeenCalledWith({ where: scope });
+    expect(memoryDocument.findFirst).toHaveBeenCalledWith({
+      where: { id: "doc-1", spaceId: "space-1", userId: "user-1" },
+    });
+    expect(memory.remove).toHaveBeenCalledWith(
+      { scope: "bot", botId: "bot-1", path: "projects/retired.md" },
+      expect.objectContaining({ spaceId: "space-1", userId: "user-1" }),
+    );
   });
 
   it("keeps MEMORY.md and does not reach another user's document", async () => {
-    const index = memoryClient({ id: "doc-1", path: "MEMORY.md" });
+    const index = memoryClient({ id: "doc-1", path: "MEMORY.md", scope: "user", botId: null });
     await expect(index.client.memory.remove({ documentId: "doc-1" })).rejects.toMatchObject({
       code: "BAD_REQUEST",
     });
-    expect(index.memoryDocument.deleteMany).not.toHaveBeenCalled();
+    expect(index.memory.remove).not.toHaveBeenCalled();
 
     const foreign = memoryClient(null);
     await expect(foreign.client.memory.remove({ documentId: "doc-2" })).rejects.toBeTruthy();
-    expect(foreign.memoryDocument.deleteMany).not.toHaveBeenCalled();
+    expect(foreign.memory.remove).not.toHaveBeenCalled();
   });
 });

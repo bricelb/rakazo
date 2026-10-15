@@ -46,4 +46,21 @@ describe("memory store contract shape", () => {
       orderBy: [{ updatedAt: "desc" }, { path: "asc" }],
     });
   });
+
+  it("removes one document by scope, bot and path inside the caller's space", async () => {
+    const deleteMany = vi.fn().mockResolvedValue({ count: 1 });
+    const store = new MarkdownMemoryStore({ memoryDocument: { deleteMany } } as never);
+    await expect(
+      store.remove({ scope: "bot", botId: "bot-1", path: "projects/retired.md" }, context),
+    ).resolves.toEqual({ removed: true });
+    expect(deleteMany).toHaveBeenCalledWith({
+      where: {
+        spaceId: "workspace-1",
+        userId: "user-1",
+        scope: "bot",
+        botId: "bot-1",
+        path: "projects/retired.md",
+      },
+    });
+  });
 });

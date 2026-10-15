@@ -308,6 +308,12 @@ export interface MemoryCommitRequest {
   sourceThreadId?: string;
 }
 
+export interface MemoryRemoveRequest {
+  scope: "bot" | "user";
+  botId?: string;
+  path: string;
+}
+
 export interface MemoryRevision {
   id: string;
   path: string;

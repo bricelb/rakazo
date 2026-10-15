@@ -3235,20 +3235,29 @@ export function createRouter(deps: RouterDeps) {
         };
       }),
       remove: authed.memory.remove.handler(async ({ context, input }) => {
-        const where = {
-          id: input.documentId,
-          spaceId: context.actor.spaceId,
-          userId: context.actor.userId,
-        };
-        const doc = await deps.prisma.memoryDocument.findFirst({ where });
+        const doc = await deps.prisma.memoryDocument.findFirst({
+          where: {
+            id: input.documentId,
+            spaceId: context.actor.spaceId,
+            userId: context.actor.userId,
+          },
+        });
         if (!doc) throw new IsolationError();
         if (!isDeletableMemoryDocument(doc.path)) {
           throw new ORPCError("BAD_REQUEST", {
             message: `${doc.path} cannot be deleted; edit its content instead.`,
           });
         }
-        // Revisions cascade with the document.
-        await deps.prisma.memoryDocument.deleteMany({ where });
+        await deps.memory.remove(
+          { scope: doc.scope as "bot" | "user", botId: doc.botId ?? undefined, path: doc.path },
+          {
+            operationId: "mem",
+            traceId: "mem",
+            spaceId: context.actor.spaceId,
+            userId: context.actor.userId,
+            signal: new AbortController().signal,
+          },
+        );
         return { ok: true as const };
       }),
       exportMarkdown: authed.memory.exportMarkdown.handler(async ({ context, input }) => {

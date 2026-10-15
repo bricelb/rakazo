@@ -19,9 +19,9 @@ test("memory and skills are readable and editable in the app", async ({ page }, 
   await page.waitForURL(/\/app\/[^/]+$/);
   // A second shared document that the user can delete later in this test.
   const retiredPath = "projects/retired.md";
-  const composer = page.getByRole("combobox", { name: "Message Chief" });
-  await composer.fill(`save shared memory ${retiredPath} with: Retired project ${stamp}`);
-  await composer.press("Enter");
+  const setupComposer = page.getByRole("combobox", { name: "Message Chief" });
+  await setupComposer.fill(`save shared memory ${retiredPath} with: Retired project ${stamp}`);
+  await setupComposer.press("Enter");
   await expect
     .poll(
       async () =>

@@ -12,6 +12,7 @@ import {
   resolveEncryptionKey,
   resolveScreenProxySecret,
   resolveSupervisorToken,
+  uploadSizeFromEnv,
 } from "@rakazo/core";
 
 export { resolveCloudAgentProvider, resolveSandboxProvider } from "@rakazo/adapters";
@@ -36,6 +37,7 @@ export interface AppEnv {
   /** Opt-in Pi JSONL session recording under DATA_DIR/pi-sessions. Default off. */
   piSessionRecording: boolean;
   ticketBoardEnabled: boolean;
+  maxUploadSizeBytes: number;
   sandboxSupervisorUrl: string;
   sandboxSupervisorToken: string | undefined;
   screenProxySecret: string;
@@ -104,6 +106,8 @@ export interface AppEnv {
   mcpAllowPrivateEndpoint: boolean;
   port: number;
   gitSha: string | undefined;
+  /** Browser error reporting, served to the web app at runtime. The DSN is public by design. */
+  browserMonitoring: { dsn: string; environment?: string; release?: string } | undefined;
   /** Private Compose control-network URL for the opt-in updater sidecar. */
   updaterUrl: string | undefined;
   /** Bearer shared with the updater; never sent to the browser. */
@@ -178,6 +182,7 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
     dataDir: source.DATA_DIR ?? "./data",
     piSessionRecording: source.PI_SESSION_RECORDING === "true",
     ticketBoardEnabled: source.TICKET_BOARD_ENABLED === "true",
+    maxUploadSizeBytes: uploadSizeFromEnv(source),
     sandboxSupervisorUrl: source.SANDBOX_SUPERVISOR_URL ?? "http://127.0.0.1:7091",
     sandboxSupervisorToken:
       sandboxProvider === "docker" ? resolveSupervisorToken(source) : undefined,
@@ -243,6 +248,7 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
     mcpAllowPrivateEndpoint: source.MCP_ALLOW_PRIVATE_ENDPOINT === "true",
     port: Number(source.API_PORT ?? 3100),
     gitSha: optional(source.GIT_SHA) ?? optional(source.RAKAZO_GIT_SHA),
+    browserMonitoring: browserMonitoringFromEnv(source),
     updaterUrl,
     updaterToken,
     imageTag: optional(source.RAKAZO_IMAGE_TAG),
@@ -253,6 +259,17 @@ function required(source: NodeJS.ProcessEnv, key: string): string {
   const value = source[key];
   if (!value) throw new Error(`Missing ${key}`);
   return value;
+}
+
+function browserMonitoringFromEnv(source: NodeJS.ProcessEnv): AppEnv["browserMonitoring"] {
+  const dsn = optional(source.SENTRY_BROWSER_DSN);
+  if (!dsn) return undefined;
+  const sha = optional(source.GIT_SHA);
+  return {
+    dsn,
+    environment: optional(source.SENTRY_ENVIRONMENT),
+    release: optional(source.SENTRY_RELEASE) ?? (sha === "unknown" ? undefined : sha),
+  };
 }
 
 function optional(value: string | undefined): string | undefined {

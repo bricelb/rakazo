@@ -54,7 +54,7 @@ function createSurface(sendErrors: string[] = []) {
     mode: "webhook",
   });
   const surface = new ChatSdkMessagingSurface([
-    { provider: "telegram", capabilities: { direct: true, groups: false, typing: false }, adapter },
+    { provider: "telegram", capabilities: { direct: true, groups: false, receipt: null }, adapter },
   ]);
   return { surface, sends, threadId: adapter.encodeThreadId({ chatId: "123" }) };
 }
@@ -165,7 +165,7 @@ describe("Telegram bots side by side", () => {
     );
     const telegram = (botToken: string, secretToken: string) =>
       createTelegramAdapter({ botToken, secretToken, mode: "webhook" });
-    const capabilities = { direct: true, groups: false, typing: false };
+    const capabilities = { direct: true, groups: false, receipt: null };
     const surface = new ChatSdkMessagingSurface([
       { provider: "telegram", capabilities, adapter: telegram("home-token", "home-secret") },
       {

@@ -33,7 +33,7 @@ export function MessagingSettingsOverlay({ onClose }: { onClose: () => void }) {
   const [externalConversations, setExternalConversations] = useState<ExternalConversation[]>([]);
   const [settingsConversationId, setSettingsConversationId] = useState<string | null>(null);
   const [linkBotId, setLinkBotId] = useState("");
-  const [linkCode, setLinkCode] = useState<{
+  const [linkRequest, setLinkRequest] = useState<{
     code: string;
     expiresAt: string;
     botId: string;
@@ -62,7 +62,7 @@ export function MessagingSettingsOverlay({ onClose }: { onClose: () => void }) {
 
   // Linking completes in the chat app: watch for a new or reassigned identity.
   useEffect(() => {
-    if (!linkCode) return;
+    if (!linkRequest) return;
     const known = new Map(status?.identities.map((identity) => [identity.id, identity.botId]));
     let active = true;
     let poll: number;
@@ -70,9 +70,9 @@ export function MessagingSettingsOverlay({ onClose }: { onClose: () => void }) {
       () => {
         active = false;
         window.clearTimeout(poll);
-        setLinkCode(null);
+        setLinkRequest(null);
       },
-      Math.max(0, Date.parse(linkCode.expiresAt) - Date.now()),
+      Math.max(0, Date.parse(linkRequest.expiresAt) - Date.now()),
     );
     async function pollStatus() {
       try {
@@ -81,13 +81,13 @@ export function MessagingSettingsOverlay({ onClose }: { onClose: () => void }) {
         if (
           next.identities.some(
             (identity) =>
-              identity.botId === linkCode?.botId && known.get(identity.id) !== identity.botId,
+              identity.botId === linkRequest?.botId && known.get(identity.id) !== identity.botId,
           )
         ) {
           active = false;
           window.clearTimeout(expire);
           setStatus(next);
-          setLinkCode(null);
+          setLinkRequest(null);
           await refresh();
         }
       } catch {
@@ -103,13 +103,13 @@ export function MessagingSettingsOverlay({ onClose }: { onClose: () => void }) {
       window.clearTimeout(expire);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [linkCode]);
+  }, [linkRequest]);
 
   async function act(action: () => Promise<unknown>) {
     setError(null);
     // A displayed code must always match the current selection and link
     // state; the link action re-sets it after issuing.
-    setLinkCode(null);
+    setLinkRequest(null);
     try {
       await action();
       await refresh();
@@ -131,6 +131,8 @@ export function MessagingSettingsOverlay({ onClose }: { onClose: () => void }) {
       .filter(Boolean)
       .join(" · ");
   }
+
+  const linkCode = linkRequest?.code;
 
   return (
     <Dialog
@@ -203,7 +205,7 @@ export function MessagingSettingsOverlay({ onClose }: { onClose: () => void }) {
               value={linkBotId}
               onChange={(event) => {
                 setLinkBotId(event.target.value);
-                setLinkCode(null);
+                setLinkRequest(null);
               }}
             >
               <NativeSelectOption value="">{t`Choose a bot…`}</NativeSelectOption>
@@ -219,7 +221,7 @@ export function MessagingSettingsOverlay({ onClose }: { onClose: () => void }) {
               onClick={() =>
                 void act(async () => {
                   const issued = await rpc.messaging.link.start({ botId: linkBotId });
-                  setLinkCode({ ...issued, botId: linkBotId });
+                  setLinkRequest({ ...issued, botId: linkBotId });
                 })
               }
             >
@@ -229,8 +231,8 @@ export function MessagingSettingsOverlay({ onClose }: { onClose: () => void }) {
           {linkCode ? (
             <p className="mt-3 text-[14px] text-foreground/75" data-testid="messaging-link-code">
               <Trans>
-                Send <span className="font-mono text-foreground">{linkCode.code}</span> to the line
-                from your chat app within 10 minutes. You'll get a confirmation reply once linked.
+                Send <span className="font-mono text-foreground">{linkCode}</span> to the line from
+                your chat app within 10 minutes. You'll get a confirmation reply once linked.
               </Trans>
             </p>
           ) : null}

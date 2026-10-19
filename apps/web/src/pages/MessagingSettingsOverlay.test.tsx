@@ -10,7 +10,12 @@ const messaging = vi.hoisted(() => ({
   channels: { list: vi.fn(async () => []), respond: vi.fn(), leave: vi.fn() },
   connections: { list: vi.fn(async () => []), respond: vi.fn(), revoke: vi.fn() },
   identities: { unlink: vi.fn() },
-  link: { start: vi.fn(async () => ({ code: "ABCD-2345", expiresAt: "" })) },
+  link: {
+    start: vi.fn(async () => ({
+      code: "ABCD-2345",
+      expiresAt: new Date(Date.now() + 20_000).toISOString(),
+    })),
+  },
 }));
 
 vi.mock("../lib/rpc", () => ({
@@ -67,6 +72,14 @@ function statusWith(identities: (typeof identity)[]) {
   return { enabled: true, providers: ["telegram"], openSignup: false, identities };
 }
 
+function pendingStatus() {
+  let resolve!: (status: ReturnType<typeof statusWith>) => void;
+  const promise = new Promise<ReturnType<typeof statusWith>>((done) => {
+    resolve = done;
+  });
+  return { promise, resolve };
+}
+
 let container: HTMLDivElement;
 let root: ReturnType<typeof createRoot>;
 
@@ -83,6 +96,9 @@ afterEach(() => {
   container.remove();
   vi.useRealTimers();
   vi.clearAllMocks();
+  messaging.status.mockReset();
+  messaging.channels.list.mockReset();
+  messaging.channels.list.mockResolvedValue([]);
 });
 
 async function startLink() {
@@ -116,9 +132,96 @@ it("lists a chat app linked from the chat app without reopening the dialog", asy
 it("stops polling once the link code expires", async () => {
   messaging.status.mockResolvedValue(statusWith([]));
   await startLink();
-  await act(async () => vi.advanceTimersByTimeAsync(10 * 60_000));
+  await act(async () => vi.advanceTimersByTimeAsync(20_000));
+  expect(container.querySelector('[data-testid="messaging-link-code"]')).toBeNull();
   const calls = messaging.status.mock.calls.length;
 
   await act(async () => vi.advanceTimersByTimeAsync(30_000));
   expect(messaging.status.mock.calls.length).toBe(calls);
+});
+
+it("detects a same-address relink to the selected bot", async () => {
+  messaging.status.mockResolvedValue(
+    statusWith([{ ...identity, botId: "bot-2", botName: "Other" }]),
+  );
+  await startLink();
+  expect(container.textContent).toContain("→ Other");
+
+  messaging.status.mockResolvedValue(statusWith([identity]));
+  await act(async () => vi.advanceTimersByTimeAsync(3_000));
+
+  expect(container.textContent).toContain("→ Chief");
+  expect(container.textContent).not.toContain("→ Other");
+  expect(container.querySelector('[data-testid="messaging-link-code"]')).toBeNull();
+});
+
+it("ignores links to a different bot", async () => {
+  messaging.status.mockResolvedValue(statusWith([]));
+  await startLink();
+  messaging.status.mockResolvedValue(statusWith([{ ...identity, botId: "bot-2" }]));
+  await act(async () => vi.advanceTimersByTimeAsync(3_000));
+  expect(container.querySelector('[data-testid="messaging-link-code"]')).not.toBeNull();
+});
+
+it("keeps the detected identity when refreshing other lists fails", async () => {
+  messaging.status.mockResolvedValue(statusWith([]));
+  await startLink();
+  messaging.status.mockResolvedValue(statusWith([identity]));
+  messaging.channels.list.mockRejectedValueOnce(new Error("Unavailable"));
+  await act(async () => vi.advanceTimersByTimeAsync(3_000));
+
+  expect(container.textContent).toContain("424242");
+  expect(container.querySelector('[data-testid="messaging-link-code"]')).toBeNull();
+  const calls = messaging.status.mock.calls.length;
+  await act(async () => vi.advanceTimersByTimeAsync(3_000));
+  expect(messaging.status).toHaveBeenCalledTimes(calls);
+});
+
+it("waits for a pending poll to settle before scheduling another", async () => {
+  messaging.status.mockResolvedValue(statusWith([]));
+  await startLink();
+  const pending = pendingStatus();
+  messaging.status.mockReturnValueOnce(pending.promise);
+  const calls = messaging.status.mock.calls.length;
+  await act(async () => vi.advanceTimersByTimeAsync(9_000));
+  expect(messaging.status).toHaveBeenCalledTimes(calls + 1);
+
+  await act(async () => pending.resolve(statusWith([])));
+  await act(async () => vi.advanceTimersByTimeAsync(2_999));
+  expect(messaging.status).toHaveBeenCalledTimes(calls + 1);
+  await act(async () => vi.advanceTimersByTimeAsync(1));
+  expect(messaging.status).toHaveBeenCalledTimes(calls + 2);
+});
+
+it("ignores a previous code's pending response after issuing a new code", async () => {
+  messaging.status.mockResolvedValue(statusWith([]));
+  await startLink();
+  const pending = pendingStatus();
+  messaging.status.mockReturnValueOnce(pending.promise);
+  await act(async () => vi.advanceTimersByTimeAsync(3_000));
+  const link = [...container.querySelectorAll("button")].find((button) =>
+    button.textContent?.includes("Link a chat app"),
+  );
+  await act(async () => link?.click());
+  const calls = messaging.status.mock.calls.length;
+  await act(async () => pending.resolve(statusWith([identity])));
+
+  expect(container.querySelector('[data-testid="messaging-link-code"]')).not.toBeNull();
+  expect(container.textContent).not.toContain("424242");
+  expect(messaging.status).toHaveBeenCalledTimes(calls);
+});
+
+it("ignores a pending response after expiry", async () => {
+  messaging.status.mockResolvedValue(statusWith([]));
+  await startLink();
+  const pending = pendingStatus();
+  messaging.status.mockReturnValueOnce(pending.promise);
+  await act(async () => vi.advanceTimersByTimeAsync(20_000));
+  const calls = messaging.status.mock.calls.length;
+  await act(async () => pending.resolve(statusWith([identity])));
+  await act(async () => vi.advanceTimersByTimeAsync(3_000));
+
+  expect(container.querySelector('[data-testid="messaging-link-code"]')).toBeNull();
+  expect(container.textContent).not.toContain("424242");
+  expect(messaging.status).toHaveBeenCalledTimes(calls);
 });

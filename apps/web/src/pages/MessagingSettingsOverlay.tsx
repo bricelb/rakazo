@@ -23,7 +23,6 @@ import { rpc } from "../lib/rpc";
 import { ExternalConversationSettings } from "./ExternalConversationSettings";
 
 const LINK_POLL_MS = 3_000;
-const LINK_CODE_TTL_MS = 10 * 60_000;
 
 export function MessagingSettingsOverlay({ onClose }: { onClose: () => void }) {
   const { t } = useLingui();
@@ -34,7 +33,11 @@ export function MessagingSettingsOverlay({ onClose }: { onClose: () => void }) {
   const [externalConversations, setExternalConversations] = useState<ExternalConversation[]>([]);
   const [settingsConversationId, setSettingsConversationId] = useState<string | null>(null);
   const [linkBotId, setLinkBotId] = useState("");
-  const [linkCode, setLinkCode] = useState<string | null>(null);
+  const [linkCode, setLinkCode] = useState<{
+    code: string;
+    expiresAt: string;
+    botId: string;
+  } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   async function refresh() {
@@ -57,25 +60,46 @@ export function MessagingSettingsOverlay({ onClose }: { onClose: () => void }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Linking completes in the chat app, not here: while a code is shown, poll
-  // until a new chat app appears so the list updates without reopening.
+  // Linking completes in the chat app: watch for a new or reassigned identity.
   useEffect(() => {
     if (!linkCode) return;
-    const known = new Set(status?.identities.map((identity) => identity.id));
-    const poll = window.setInterval(() => {
-      void rpc.messaging
-        .status()
-        .then((next) => {
-          if (!next.identities.some((identity) => !known.has(identity.id))) return;
+    const known = new Map(status?.identities.map((identity) => [identity.id, identity.botId]));
+    let active = true;
+    let poll: number;
+    const expire = window.setTimeout(
+      () => {
+        active = false;
+        window.clearTimeout(poll);
+        setLinkCode(null);
+      },
+      Math.max(0, Date.parse(linkCode.expiresAt) - Date.now()),
+    );
+    async function pollStatus() {
+      try {
+        const next = await rpc.messaging.status();
+        if (!active) return;
+        if (
+          next.identities.some(
+            (identity) =>
+              identity.botId === linkCode?.botId && known.get(identity.id) !== identity.botId,
+          )
+        ) {
+          active = false;
+          window.clearTimeout(expire);
+          setStatus(next);
           setLinkCode(null);
-          return refresh();
-        })
-        .catch(() => undefined);
-    }, LINK_POLL_MS);
-    // Codes expire after 10 minutes; stop polling for one nobody used.
-    const expire = window.setTimeout(() => window.clearInterval(poll), LINK_CODE_TTL_MS);
+          await refresh();
+        }
+      } catch {
+        // A transient failure can be retried while the code is valid.
+      } finally {
+        if (active) poll = window.setTimeout(() => void pollStatus(), LINK_POLL_MS);
+      }
+    }
+    poll = window.setTimeout(() => void pollStatus(), LINK_POLL_MS);
     return () => {
-      window.clearInterval(poll);
+      active = false;
+      window.clearTimeout(poll);
       window.clearTimeout(expire);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -195,7 +219,7 @@ export function MessagingSettingsOverlay({ onClose }: { onClose: () => void }) {
               onClick={() =>
                 void act(async () => {
                   const issued = await rpc.messaging.link.start({ botId: linkBotId });
-                  setLinkCode(issued.code);
+                  setLinkCode({ ...issued, botId: linkBotId });
                 })
               }
             >
@@ -205,8 +229,8 @@ export function MessagingSettingsOverlay({ onClose }: { onClose: () => void }) {
           {linkCode ? (
             <p className="mt-3 text-[14px] text-foreground/75" data-testid="messaging-link-code">
               <Trans>
-                Send <span className="font-mono text-foreground">{linkCode}</span> to the line from
-                your chat app within 10 minutes. You'll get a confirmation reply once linked.
+                Send <span className="font-mono text-foreground">{linkCode.code}</span> to the line
+                from your chat app within 10 minutes. You'll get a confirmation reply once linked.
               </Trans>
             </p>
           ) : null}

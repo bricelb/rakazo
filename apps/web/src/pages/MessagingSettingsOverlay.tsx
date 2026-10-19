@@ -22,6 +22,9 @@ import { providerLabel } from "../lib/messaging";
 import { rpc } from "../lib/rpc";
 import { ExternalConversationSettings } from "./ExternalConversationSettings";
 
+const LINK_POLL_MS = 3_000;
+const LINK_CODE_TTL_MS = 10 * 60_000;
+
 export function MessagingSettingsOverlay({ onClose }: { onClose: () => void }) {
   const { t } = useLingui();
   const [status, setStatus] = useState<MessagingStatus | null>(null);
@@ -53,6 +56,30 @@ export function MessagingSettingsOverlay({ onClose }: { onClose: () => void }) {
     void refresh().catch(() => setError(t`Couldn't load messaging settings`));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Linking completes in the chat app, not here: while a code is shown, poll
+  // until a new chat app appears so the list updates without reopening.
+  useEffect(() => {
+    if (!linkCode) return;
+    const known = new Set(status?.identities.map((identity) => identity.id));
+    const poll = window.setInterval(() => {
+      void rpc.messaging
+        .status()
+        .then((next) => {
+          if (!next.identities.some((identity) => !known.has(identity.id))) return;
+          setLinkCode(null);
+          return refresh();
+        })
+        .catch(() => undefined);
+    }, LINK_POLL_MS);
+    // Codes expire after 10 minutes; stop polling for one nobody used.
+    const expire = window.setTimeout(() => window.clearInterval(poll), LINK_CODE_TTL_MS);
+    return () => {
+      window.clearInterval(poll);
+      window.clearTimeout(expire);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [linkCode]);
 
   async function act(action: () => Promise<unknown>) {
     setError(null);

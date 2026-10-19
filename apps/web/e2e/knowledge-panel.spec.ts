@@ -94,6 +94,8 @@ test("memory and skills are readable and editable in the app", async ({ page }, 
   await spaceDocs.getByRole("button", { name: "Cancel", exact: true }).click();
   const retiredRow = spaceDocs.getByRole("button", { name: new RegExp(retiredPath) });
   await retiredRow.click();
+  await expect(spaceDocs.getByRole("button", { name: "Delete", exact: true })).toBeVisible();
+  await captureScreenshot(page, testInfo, "85-space-memory-delete");
   await spaceDocs.getByRole("button", { name: "Delete", exact: true }).click();
   await captureScreenshot(page, testInfo, "85-space-memory-confirm-delete");
   await spaceDocs.getByRole("button", { name: "Confirm delete", exact: true }).click();

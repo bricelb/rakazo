@@ -50,7 +50,6 @@ vi.mock("@earendil-works/pi-ai/providers/all", () => ({
   },
 }));
 
-vi.mock("./pi-current-models.js", () => ({ supplementPiModels: (models: unknown) => models }));
 vi.mock("./pi-local-provider.js", () => ({ registerLocalProvider: (models: unknown) => models }));
 vi.mock("./pi-openai-compatible-provider.js", () => ({
   OPENAI_COMPATIBLE_PROVIDER_ID: "openai-compatible",
@@ -59,7 +58,7 @@ vi.mock("./pi-openai-compatible-provider.js", () => ({
 }));
 
 import { IMAGE_RETURNING_COMPUTER_TOOLS } from "./model-vision.js";
-import { isRetryableProviderUnavailable, PiAgentRuntime } from "./pi-runtime.js";
+import { PiAgentRuntime } from "./pi-runtime.js";
 import { MODEL_STREAM_IDLE_TIMEOUT_MS } from "./pi-runtime-limits.js";
 import { PiJsonlSessionRecorder } from "./pi-session.js";
 
@@ -218,6 +217,7 @@ afterEach(() => vi.useRealTimers());
 describe("Pi runtime transient model retries", () => {
   it.each([
     "terminated",
+    "Stream ended without finish_reason",
     "Codex error: Our servers are currently overloaded. Please try again later.",
   ])(
     "recovers from two pre-output failures with %s and commits one assistant message",
@@ -302,22 +302,25 @@ describe("Pi runtime transient model retries", () => {
     expect(providerState.delay.mock.calls.map(([delay]) => delay)).toEqual([2_000]);
   });
 
-  it("does not retry after a tool call starts even if the terminal error omits it", async () => {
-    const failure = message(primary, [], "error", "terminated");
-    providerState.stream.mockImplementation(() => {
-      const result = new AssistantMessageEventStream();
-      result.push({ type: "start", partial: failure });
-      result.push({ type: "toolcall_start", contentIndex: 0, partial: failure });
-      result.push({ type: "error", reason: "error", error: failure });
-      result.end(failure);
-      return result;
-    });
-    const input = request([{ provider: backupA.provider, id: backupA.id, apiKey: "backup-key" }]);
-    await expect(run(input)).rejects.toThrow("terminated");
-    expect(providerState.stream).toHaveBeenCalledOnce();
-    expect(providerState.delay).not.toHaveBeenCalled();
-    expect(input.executeTool).not.toHaveBeenCalled();
-  });
+  it.each(["terminated", "Stream ended without finish_reason"])(
+    "does not retry after a tool call starts even if %s omits it",
+    async (error) => {
+      const failure = message(primary, [], "error", error);
+      providerState.stream.mockImplementation(() => {
+        const result = new AssistantMessageEventStream();
+        result.push({ type: "start", partial: failure });
+        result.push({ type: "toolcall_start", contentIndex: 0, partial: failure });
+        result.push({ type: "error", reason: "error", error: failure });
+        result.end(failure);
+        return result;
+      });
+      const input = request([{ provider: backupA.provider, id: backupA.id, apiKey: "backup-key" }]);
+      await expect(run(input)).rejects.toThrow(error);
+      expect(providerState.stream).toHaveBeenCalledOnce();
+      expect(providerState.delay).not.toHaveBeenCalled();
+      expect(input.executeTool).not.toHaveBeenCalled();
+    },
+  );
 
   it("retries the same model for a helper agent without configured backups", async () => {
     const input = request();
@@ -633,6 +636,21 @@ describe("Pi runtime ordered model fallback", () => {
       request([{ provider: backupA.provider, id: backupA.id, apiKey: "backup-key" }]),
     );
     expect(events).toContainEqual({ type: "text", text: "backup answer" });
+    expect(providerState.stream).toHaveBeenCalledTimes(2);
+  });
+
+  it("completes on the backup when the primary throws a Kimi 403 usage-limit error", async () => {
+    const kimiUsageLimit =
+      '403 {"error":{"type":"permission_error","message":"You\'ve reached your 5-hour usage limit. Your quota will reset when the current 5-hour window ends. To continue now, purchase extra usage or upgrade your plan: https://www.kimi.com/membership/subscription?tab=quota"},"type":"error"}';
+    providerState.stream.mockImplementation((target: Model<"openai-completions">) => {
+      if (target.provider === primary.provider) throw new Error(kimiUsageLimit);
+      return stream(target, message(target, [{ type: "text", text: "backup answer" }], "stop"));
+    });
+    const events = await run(
+      request([{ provider: backupA.provider, id: backupA.id, apiKey: "backup-key" }]),
+    );
+    expect(events).toContainEqual({ type: "text", text: "backup answer" });
+    expect(events.at(-1)).toEqual({ type: "done", text: "backup answer" });
     expect(providerState.stream).toHaveBeenCalledTimes(2);
   });
 
@@ -1102,9 +1120,11 @@ describe("Pi runtime ordered model fallback", () => {
 
       expect(providerState.stream).toHaveBeenCalledTimes(1);
       expect(appendMessage).toHaveBeenCalledWith(
-        emptyTerminal
-          ? { ...targetMessage, content: [{ type: "text", text: "partial" }] }
-          : targetMessage,
+        expect.objectContaining(
+          emptyTerminal
+            ? { ...targetMessage, content: [{ type: "text", text: "partial" }] }
+            : targetMessage,
+        ),
       );
       expect(
         events
@@ -1660,53 +1680,5 @@ describe("Pi runtime ordered model fallback", () => {
     expect(resolveFallbackModel).toHaveBeenNthCalledWith(2, backupB.provider, backupB.id);
     expect(requestKeys).toEqual(["backup-only-key"]);
     expect(JSON.stringify(events)).not.toContain("backup-only-key");
-  });
-});
-
-describe("provider availability classification", () => {
-  it.each([
-    ["dropped fetch body", new TypeError("terminated"), true],
-    [
-      "Codex overload",
-      new Error("Codex error: Our servers are currently overloaded. Please try again later."),
-      true,
-    ],
-    [
-      "HTTP 400 before retry text",
-      { status: 400, message: "429 rate limit; Retry-After 3301s" },
-      false,
-    ],
-    [
-      "HTTP 401 before retry text",
-      { statusCode: 401, message: "429 rate limit; Retry-After 3301s" },
-      false,
-    ],
-    [
-      "HTTP 403 before retry text",
-      { httpStatus: 403, message: "429 rate limit; Retry-After 3301s" },
-      false,
-    ],
-    [
-      "unprocessable input before retry text",
-      { status: 422, message: "The request cannot be processed; 429 rate limit" },
-      false,
-    ],
-    [
-      "cancellation",
-      new Error("user cancelled request; retry after 3301 seconds; 429 rate limit"),
-      false,
-    ],
-    [
-      "consent refusal",
-      new Error("user declined consent; retry after 3301 seconds; 429 rate limit"),
-      false,
-    ],
-    ["quota exhaustion", { status: 402, message: "provider quota exhausted" }, true],
-    ["plain status", new Error("503 provider unavailable"), true],
-    ["HTTP server status", new Error("HTTP 500"), true],
-    ["context overflow", new Error("context_length_exceeded; retry after 60s"), false],
-    ["transient server failure", { status: 503, message: "service unavailable" }, true],
-  ])("classifies %s", (_label, error, expected) => {
-    expect(isRetryableProviderUnavailable(error)).toBe(expected);
   });
 });

@@ -67,4 +67,22 @@ describe("memory store contract shape", () => {
       },
     });
   });
+
+  it("returns false for a missing user document without touching bot memory", async () => {
+    const deleteMany = vi.fn().mockResolvedValue({ count: 0 });
+    const store = new MarkdownMemoryStore({ memoryDocument: { deleteMany } } as never);
+    await expect(
+      store.remove({ id: "missing", scope: "user", path: "projects/retired.md" }, context),
+    ).resolves.toEqual({ removed: false });
+    expect(deleteMany).toHaveBeenCalledWith({
+      where: {
+        id: "missing",
+        spaceId: "workspace-1",
+        userId: "user-1",
+        scope: "user",
+        botId: null,
+        path: "projects/retired.md",
+      },
+    });
+  });
 });

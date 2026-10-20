@@ -172,6 +172,8 @@ jobs:
           set -euo pipefail
           app="apps/desktop/out/mac-universal/Rakazo.app"
           codesign --verify --deep --strict --verbose=2 "$app"
+          # Without this entitlement the hardened runtime silences the microphone.
+          codesign -d --entitlements :- "$app" | grep -q "com.apple.security.device.audio-input"
           xcrun stapler validate "$app"
           spctl --assess --type execute --verbose=2 "$app"
           grep -Fqx "provider: github" "$app/Contents/Resources/app-update.yml"
